@@ -1,102 +1,106 @@
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
 import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.List;
 
-// --- ゲームの基本ルール（Card, Hand, Deck） ---
-class Card {
-    enum Suit { SPADE, HEART, DIAMOND, CLUB, JOKER }
-    private final Suit suit;
-    private final int rank;
-    public Card(Suit suit, int rank) { this.suit = suit; this.rank = rank; }
-    public Suit getSuit() { return suit; }
-    public int getRank() { return rank; }
-    public boolean isJoker() { return suit == Suit.JOKER; }
-    public Color getColor() { return (suit == Suit.HEART || suit == Suit.DIAMOND) ? Color.RED : Color.BLACK; }
-}
-
-class Hand {
-    private List<Card> cards = new ArrayList<>();
-    public void addCard(Card c) { cards.add(c); }
-    public int size() { return cards.size(); }
-    public List<Card> getCards() { return cards; }
-    public Card pullCard(int idx) { return cards.remove(idx); }
-    public void discardPairs() {
-        Map<Integer, Integer> counts = new HashMap<>();
-        for (Card c : cards) if (!c.isJoker()) counts.put(c.getRank(), counts.getOrDefault(c.getRank(), 0) + 1);
-        for (Integer rank : counts.keySet()) {
-            int pairs = counts.get(rank) / 2;
-            for (int i = 0; i < pairs * 2; i++) {
-                for (int j = 0; j < cards.size(); j++) {
-                    if (!cards.get(j).isJoker() && cards.get(j).getRank() == rank) { cards.remove(j); break; }
-                }
-            }
-        }
-    }
-}
-
-class Deck {
-    private List<Card> cards = new ArrayList<>();
-    public Deck() {
-        for (Card.Suit s : EnumSet.range(Card.Suit.SPADE, Card.Suit.CLUB)) {
-            for (int r = 1; r <= 13; r++) cards.add(new Card(s, r));
-        }
-        cards.add(new Card(Card.Suit.JOKER, 0));
-        Collections.shuffle(cards);
-    }
-    public Card draw() { return cards.isEmpty() ? null : cards.remove(0); }
-}
-
-// --- メイン画面（GUI） ---
 public class OldMaidApp extends JFrame {
-    private List<Hand> allHands;
+    private Hand myHand = new Hand();
+    private List<Card> cardsInHand = new ArrayList<>();
+    private JPanel cardPanel;
     private JLabel statusLabel;
     private Socket socket;
     private PrintWriter out;
+    private BufferedReader in;
 
     public OldMaidApp() {
-        setTitle("Old Maid Online");
-        setSize(800, 600);
+        setTitle("Old Maid Online - Player");
+        setSize(800, 400);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+
+        // UIの組み立て
+        JPanel mainPanel = new JPanel(new BorderLayout());
         statusLabel = new JLabel("サーバーに接続中...", SwingConstants.CENTER);
-        add(statusLabel, BorderLayout.CENTER);
+        statusLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
         
+        cardPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 20));
+        cardPanel.setBackground(new Color(20, 100, 40)); // 緑のテーブル風
+
+        mainPanel.add(statusLabel, BorderLayout.NORTH);
+        mainPanel.add(cardPanel, BorderLayout.CENTER);
+        add(mainPanel);
+
         connectToServer();
-        initGame();
     }
 
     private void connectToServer() {
         new Thread(() -> {
             try {
+                // サーバーに接続
                 socket = new Socket("localhost", 12345);
                 out = new PrintWriter(socket.getOutputStream(), true);
-                Scanner in = new Scanner(socket.getInputStream());
-                while (in.hasNextLine()) {
-                    String msg = in.nextLine();
-                    SwingUtilities.invokeLater(() -> statusLabel.setText(msg));
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.startsWith("CARD:")) {
+                        // サーバーからカードが届いた（例: CARD:S1）
+                        String cardCode = line.substring(5);
+                        addCardToHand(cardCode);
+                    } else if (line.startsWith("GAME_START:")) {
+                        // ゲーム開始の合図
+                        String msg = line.substring(11);
+                        SwingUtilities.invokeLater(() -> {
+                            statusLabel.setText(msg);
+                            refreshHandUI();
+                        });
+                    } else {
+                        // その他のメッセージ（人数通知など）
+                        String msg = line;
+                        SwingUtilities.invokeLater(() -> statusLabel.setText(msg));
+                    }
                 }
-            } catch (Exception e) {
-                SwingUtilities.invokeLater(() -> statusLabel.setText("オフラインモード"));
+            } catch (IOException e) {
+                SwingUtilities.invokeLater(() -> statusLabel.setText("接続エラー: サーバーを先に起動してください"));
             }
         }).start();
     }
 
-    private void initGame() {
-        allHands = new ArrayList<>();
-        allHands.add(new Hand()); // 自分用
-        allHands.add(new Hand()); // CPU用
-        Deck deck = new Deck();
-        int turn = 0;
-        while (true) {
-            Card c = deck.draw();
-            if (c == null) break;
-            allHands.get(turn % 2).addCard(c);
-            turn++;
+    private void addCardToHand(String code) {
+        // 簡易的なカード表現（実際はCardクラスに変換してもOK）
+        cardsInHand.add(new Card(code));
+    }
+
+    private void refreshHandUI() {
+        cardPanel.removeAll();
+        for (Card c : cardsInHand) {
+            JLabel label = new JLabel(c.getDisplayName());
+            label.setOpaque(true);
+            label.setBackground(Color.WHITE);
+            label.setPreferredSize(new Dimension(60, 90));
+            label.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+            label.setHorizontalAlignment(SwingConstants.CENTER);
+            if (c.isRed()) label.setForeground(Color.RED);
+            cardPanel.add(label);
         }
-        for (Hand h : allHands) h.discardPairs();
+        cardPanel.revalidate();
+        cardPanel.repaint();
+    }
+
+    // --- 内部用簡易Cardクラス ---
+    class Card {
+        String code;
+        Card(String code) { this.code = code; }
+        String getDisplayName() {
+            if (code.equals("J0")) return "JOKER";
+            String suit = code.substring(0, 1);
+            String rank = code.substring(1);
+            String sSymbol = suit.replace("S","♠").replace("H","♥").replace("D","♦").replace("C","♣");
+            return sSymbol + rank;
+        }
+        boolean isRed() { return code.startsWith("H") || code.startsWith("D"); }
     }
 
     public static void main(String[] args) {
