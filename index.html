@@ -9,9 +9,9 @@
     <div id="game-container" style="width:100%; height:100vh;"></div>
     <script>
         cheerpjInit();
-        // 第2引数を "" にすることで、現在のフォルダから .class を探します
+        // コンパイル済みの OldMaidApp.class を直接指定
         cheerpjCreateDisplay(-1, -1, document.getElementById("game-container"));
-        cheerpjRunMain("OldMaidApp", "");
+        cheerpjRunMain("OldMaidApp", "/app/old-maid-online/");
     </script>
 </body>
 </html>
