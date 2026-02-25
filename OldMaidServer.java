@@ -42,6 +42,12 @@ public class OldMaidServer extends WebSocketServer {
     }
 
     public static void main(String[] args) {
-        new OldMaidServer(8080).start(); // Webでは8080ポートなどが一般的
+        // Renderから指定されるポート番号を読み取る（なければ8080を使用）
+        String portStr = System.getenv("PORT");
+        int port = (portStr != null) ? Integer.parseInt(portStr) : 8080;
+
+        OldMaidServer server = new OldMaidServer(port);
+        server.start();
+        System.out.println("Web対応サーバーがポート " + port + " で起動しました。");
     }
 }
