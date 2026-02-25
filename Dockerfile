@@ -1,11 +1,15 @@
-# 1. サーバーを作る道具を準備
+# 1. サーバーをビルド（お弁当を作る）
 FROM maven:3.8.8-eclipse-temurin-17 AS build
+WORKDIR /app
 COPY . .
 RUN mvn clean package -DskipTests
 
-# 2. サーバーを動かす
+# 2. サーバーを起動（お弁当を食べる）
 FROM eclipse-temurin:17-jre
-COPY --from=build /target/*.jar app.jar
+WORKDIR /app
+# ビルドされた「中身」だけを直接コピーする
+COPY --from=build /app/target/classes/ .
+# 必要なライブラリ(WebSocket)を読み込めるようにして実行！
+COPY --from=build /app/target/app.jar app.jar
 EXPOSE 8080
-# 直接ファイルを指定して「これ動かして！」と叫ぶ設定
-ENTRYPOINT ["java", "-cp", "app.jar", "OldMaidServer"]
+ENTRYPOINT ["java", "-cp", ".:app.jar", "OldMaidServer"]
