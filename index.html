@@ -9,9 +9,10 @@
     <div id="game-container" style="width:100%; height:100vh;"></div>
     <script>
         cheerpjInit();
-        // コンパイル済みの OldMaidApp.class を直接指定
+        // 表示エリアを作成
         cheerpjCreateDisplay(-1, -1, document.getElementById("game-container"));
-        cheerpjRunMain("OldMaidApp", "/app/old-maid-online/");
+        // 第2引数を "" (空文字) にすることで、同じ場所にある .class を読み込みます
+        cheerpjRunMain("OldMaidApp", ""); 
     </script>
 </body>
 </html>
