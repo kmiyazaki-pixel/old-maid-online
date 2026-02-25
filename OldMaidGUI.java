@@ -1,3 +1,45 @@
+// --- インポート文の最後に追加 ---
+import java.io.*;
+import java.net.*;
+
+public class OldMaidGUI extends JFrame {
+    // --- 既存の変数の下に追加 ---
+    private Socket socket;
+    private PrintWriter out;
+    private BufferedReader in;
+
+    public OldMaidGUI() {
+        // ...既存のコード...
+        setupUI();
+        
+        // --- コンストラクタの最後に追加 ---
+        connectToServer(); 
+        
+        currentPlayerIdx = 0;
+        nextTurn();
+    }
+
+    // --- 新しいメソッドとして追加 ---
+    private void connectToServer() {
+        new Thread(() -> {
+            try {
+                this.socket = new Socket("localhost", 12345);
+                this.out = new PrintWriter(socket.getOutputStream(), true);
+                this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                String msg;
+                while ((msg = in.readLine()) != null) {
+                    final String serverMsg = msg;
+                    // サーバーからのメッセージを画面上のラベルに表示
+                    SwingUtilities.invokeLater(() -> statusLabel.setText(serverMsg));
+                }
+            } catch (IOException e) {
+                SwingUtilities.invokeLater(() -> statusLabel.setText("サーバー未接続（オフライン）"));
+            }
+        }).start();
+    }
+
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
