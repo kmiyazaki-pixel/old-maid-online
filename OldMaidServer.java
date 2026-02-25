@@ -40,14 +40,15 @@ public class OldMaidServer extends WebSocketServer {
     public void broadcast(String msg) {
         for (WebSocket sock : conns) sock.send(msg);
     }
-
-    public static void main(String[] args) {
-        // Renderから指定されるポート番号を読み取る（なければ8080を使用）
+public static void main(String[] args) {
+        // Renderが割り当てるポート番号を最優先で読み込む
         String portStr = System.getenv("PORT");
         int port = (portStr != null) ? Integer.parseInt(portStr) : 8080;
 
+        // 0.0.0.0 で待機しないと外部（ブラウザ）から繋がらないことがあります
         OldMaidServer server = new OldMaidServer(port);
         server.start();
         System.out.println("Web対応サーバーがポート " + port + " で起動しました。");
     }
+    
 }
