@@ -96,6 +96,11 @@ public class OldMaidServer extends WebSocketServer {
         int pulledCard = targetHand.remove(index);
         hands.get(conn).add(pulledCard);
 
+        // ★追加：引いた側の手札をシャッフル（どこに入ったかわからなくする）
+    Collections.shuffle(hands.get(conn));
+    // ★追加：引かれた側の手札もシャッフル（位置を特定させない）
+    Collections.shuffle(targetHand);
+
         sendGameState(rid);
     }
 
