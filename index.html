@@ -2,41 +2,87 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Royal Old Maid</title>
+    <title>Royal Old Maid - Special Edition</title>
     <style>
-        :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; }
-        body { font-family: 'Hiragino Sans', sans-serif; background: #0e3b12; color: white; margin: 0; overflow: hidden; text-align: center; }
-        #game-screen { display: flex; flex-direction: column; align-items: center; height: 100vh; background: radial-gradient(circle, #1b5e20, #0a2b0e); }
-        #status-bar { font-size: 1.8rem; font-weight: bold; color: var(--gold); margin: 30px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-        .hand-area { position: relative; height: 200px; width: 100%; display: flex; justify-content: center; align-items: flex-end; }
-        .card-wrapper { position: absolute; width: var(--card-w); height: var(--card-h); border-radius: 8px; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
-        .card-back { background: #c62828; border: 3px solid white; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px); }
-        .my-card { background: white; border: 1px solid #ccc; position: absolute; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-        .cursor-arrow { position: absolute; top: -50px; left: 50%; transform: translateX(-50%); color: var(--gold); font-size: 2.5rem; display: none; }
-        .selected { transform: translateY(-30px) scale(1.05) !important; z-index: 100 !important; box-shadow: 0 0 30px var(--gold); }
-        .selected .cursor-arrow { display: block; animation: bounce 0.4s infinite alternate; }
-        @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-10px); } }
-        #control-panel { display: flex; align-items: center; gap: 15px; margin: 40px 0; height: 60px; }
-        .nav-btn { background: #333; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 1.2rem; cursor: pointer; }
-        .draw-btn { background: var(--gold); color: #222; border: none; padding: 18px 60px; border-radius: 50px; font-size: 1.5rem; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
-        .draw-btn:disabled { background: #666; opacity: 0.7; cursor: not-allowed; }
-        .divider { width: 80%; height: 2px; background: rgba(255,255,255,0.1); margin: 20px 0; }
-        #room-overlay { position: fixed; inset: 0; background: #0e3b12; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        input { padding: 15px; font-size: 1.5rem; border-radius: 30px; border: none; width: 200px; text-align: center; margin-bottom: 20px; }
-        .discard { animation: flyOut 0.8s forwards; z-index: 1000 !important; }
-        @keyframes flyOut { 100% { transform: translateY(-800px) rotate(360deg) scale(0); opacity: 0; } }
+        :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; --accent: #ff5252; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #071a08; color: white; margin: 0; overflow: hidden; text-align: center; }
+        
+        #game-screen { 
+            display: flex; flex-direction: column; align-items: center; height: 100vh; 
+            background: radial-gradient(circle at center, #1b5e20 0%, #071a08 100%); 
+        }
+
+        #status-bar { 
+            font-size: 2rem; font-weight: 900; color: var(--gold); margin: 30px 0; 
+            text-shadow: 0 0 15px rgba(255, 215, 0, 0.5); letter-spacing: 2px;
+        }
+
+        .hand-area { position: relative; height: 220px; width: 100%; display: flex; justify-content: center; align-items: flex-end; perspective: 1200px; }
+
+        /* カードの基本スタイル */
+        .card-wrapper { 
+            position: absolute; width: var(--card-w); height: var(--card-h); 
+            border-radius: 12px; transition: all 0.6s cubic-bezier(0.23, 1, 0.32, 1); 
+            cursor: pointer; transform-style: preserve-3d;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.4);
+        }
+
+        .card-back { 
+            background: #b71c1c; border: 3px solid #eee; 
+            background-image: repeating-linear-gradient(45deg, #b71c1c, #b71c1c 10px, #d32f2f 10px, #d32f2f 20px); 
+        }
+
+        .my-card { background: white; border: 1px solid #ddd; }
+
+        /* 選択時のエフェクト */
+        .cursor-arrow { 
+            position: absolute; top: -60px; left: 50%; transform: translateX(-50%); 
+            color: var(--gold); font-size: 3rem; display: none; filter: drop-shadow(0 0 8px orange);
+        }
+        .selected { transform: translateY(-40px) scale(1.1) !important; z-index: 500 !important; box-shadow: 0 15px 30px rgba(255, 215, 0, 0.4); }
+        .selected .cursor-arrow { display: block; animation: bounce 0.6s infinite alternate; }
+        @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-15px); } }
+
+        /* 捨てる演出 */
+        .discard-target { z-index: 1000 !important; transform: scale(1.2) translateY(-20px) !important; filter: brightness(1.5) contrast(1.2); }
+        .discard-fly { animation: discardAnim 0.8s ease-in forwards; pointer-events: none; }
+        @keyframes discardAnim {
+            0% { transform: scale(1.2) translateY(-20px) rotate(0); opacity: 1; }
+            30% { transform: scale(1.3) translateY(-40px) rotate(10deg); opacity: 1; }
+            100% { transform: scale(0.2) translateY(-1000px) rotate(720deg); opacity: 0; }
+        }
+
+        /* 操作パネル */
+        #control-panel { display: flex; align-items: center; gap: 20px; margin: 40px 0; height: 80px; }
+        .nav-btn { 
+            background: rgba(255,255,255,0.1); color: white; border: 2px solid rgba(255,255,255,0.2); 
+            padding: 15px 25px; border-radius: 12px; font-size: 1.2rem; cursor: pointer; transition: 0.2s;
+        }
+        .nav-btn:hover { background: rgba(255,255,255,0.2); }
+        .draw-btn { 
+            background: linear-gradient(135deg, #ffd700, #ffb300); color: #222; border: none; 
+            padding: 20px 60px; border-radius: 50px; font-size: 1.6rem; cursor: pointer; font-weight: 900; 
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4); transition: 0.3s;
+        }
+        .draw-btn:active { transform: scale(0.95); box-shadow: 0 2px 10px rgba(0,0,0,0.4); }
+        .draw-btn:disabled { background: #555; color: #888; cursor: not-allowed; box-shadow: none; }
+
+        .divider { width: 85%; height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent); margin: 20px 0; }
+
+        #room-overlay { position: fixed; inset: 0; background: #071a08; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        input { padding: 18px; font-size: 1.5rem; border-radius: 15px; border: 2px solid var(--gold); background: #111; color: white; width: 220px; text-align: center; margin-bottom: 25px; outline: none; }
     </style>
 </head>
 <body>
 
 <div id="room-overlay">
-    <h1>ROYAL OLD MAID</h1>
+    <h1 style="color:var(--gold); letter-spacing: 5px;">ROYAL OLD MAID</h1>
     <input type="text" id="room-input" placeholder="Room ID">
-    <button class="draw-btn" onclick="join()">入室</button>
+    <button class="draw-btn" onclick="join()">ENTER ROOM</button>
 </div>
 
 <div id="game-screen">
-    <div id="status-bar">Connecting...</div>
+    <div id="status-bar">Waiting for player...</div>
     <div id="opp-hand-area" class="hand-area"></div>
     <div id="control-panel"></div>
     <div class="divider"></div>
@@ -48,7 +94,7 @@
     let myHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
     let isFirstLoad = true;
 
-    socket.onmessage = (e) => {
+    socket.onmessage = async (e) => {
         const data = e.data;
         if (data.startsWith("STATE|")) {
             const [_, cards, count, turn] = data.split("|");
@@ -58,17 +104,17 @@
             
             document.getElementById('room-overlay').style.display = "none";
             
-            // 初回入室時のみ、即座にペアチェックを走らせる
             if (isFirstLoad) {
                 isFirstLoad = false;
                 updateUI();
-                checkPairs();
+                setTimeout(checkPairs, 800);
             } else if (!animating) {
                 updateUI();
             }
         } else if (data.startsWith("WINNER:")) {
-            alert(data.split(":")[1]);
-            location.reload();
+            const msg = data.split(":")[1];
+            document.getElementById('status-bar').innerText = msg;
+            setTimeout(() => { alert(msg); location.reload(); }, 1000);
         }
     };
 
@@ -90,6 +136,7 @@
     }
 
     function updateUI() {
+        if (animating) return;
         const oppArea = document.getElementById('opp-hand-area');
         const myArea = document.getElementById('my-hand');
         const status = document.getElementById('status-bar');
@@ -99,8 +146,9 @@
         for (let i = 0; i < oppCount; i++) {
             const wrap = document.createElement('div');
             wrap.className = "card-wrapper card-back" + (isTurn && i === selectedIdx ? " selected" : "");
-            const x = (i - (oppCount-1)/2) * 40;
-            wrap.style.transform = `translateX(${x}px)`;
+            const x = (i - (oppCount-1)/2) * 35;
+            const rot = (i - (oppCount-1)/2) * 3;
+            wrap.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
             wrap.innerHTML = `<div class="cursor-arrow">▼</div>`;
             wrap.onclick = () => { if(isTurn && !animating) { selectedIdx = i; updateUI(); } };
             oppArea.appendChild(wrap);
@@ -112,19 +160,20 @@
             c.className = "card-wrapper my-card";
             c.id = "card-" + n;
             const x = (i - (myHand.length-1)/2) * 45;
-            c.style.transform = `translateX(${x}px)`;
-            c.innerHTML = `<img src="images/png/${getCardFile(n)}" style="width:100%;height:100%;border-radius:5px;pointer-events:none;" onerror="this.src='https://via.placeholder.com/100x150?text=Card'">`;
+            const rot = (i - (myHand.length-1)/2) * 1;
+            c.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
+            c.innerHTML = `<img src="images/png/${getCardFile(n)}" style="width:100%;height:100%;border-radius:10px;pointer-events:none;" onerror="this.src='https://via.placeholder.com/100x150?text=Card'">`;
             myArea.appendChild(c);
         });
 
-        status.innerText = isTurn ? "あなたの番です！" : "相手が引いています...";
-        status.style.color = isTurn ? "#ffd700" : "white";
+        status.innerText = isTurn ? "YOUR TURN" : "OPPONENT DRAWING...";
+        status.style.color = isTurn ? "var(--gold)" : "#aaa";
         
         if (isTurn && oppCount > 0) {
             panel.innerHTML = `
-                <button class="nav-btn" onclick="move(-1)">◀ 左へ</button>
-                <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">このカードを引く</button>
-                <button class="nav-btn" onclick="move(1)">右へ ▶</button>
+                <button class="nav-btn" onclick="move(-1)">◀ LEFT</button>
+                <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">DRAW THIS CARD</button>
+                <button class="nav-btn" onclick="move(1)">RIGHT ▶</button>
             `;
         } else {
             panel.innerHTML = "";
@@ -134,16 +183,17 @@
     function confirmDraw() {
         if(!isTurn || animating || oppCount === 0) return;
         animating = true;
-        document.getElementById('draw-confirm').disabled = true;
+        const btn = document.getElementById('draw-confirm');
+        if(btn) btn.disabled = true;
+
+        // 1. サーバーへ送信
         socket.send("DRAW:" + selectedIdx);
 
-        // 引いたカードを確認する時間をしっかり確保
+        // 2. 引く演出の「間」を作る
         setTimeout(() => {
-            updateUI(); // 自分の手札に加わった状態を描画
-            setTimeout(() => {
-                checkPairs(); // その後ペアを捨てる
-            }, 1000);
-        }, 500);
+            updateUI(); // 自分の手元にカードが来る描画
+            setTimeout(checkPairs, 1200); // 1.2秒じっくり見せてからペアチェック
+        }, 400);
     }
 
     function checkPairs() {
@@ -154,15 +204,25 @@
 
         if (pairs.length > 0) {
             animating = true;
+            // まず「光らせる」
             pairs.forEach(id => {
                 const el = document.getElementById("card-" + id);
-                if(el) el.classList.add('discard');
+                if(el) el.classList.add('discard-target');
             });
-            setTimeout(() => { 
-                socket.send("DISCARD_DONE");
-                animating = false;
-                updateUI();
-            }, 800);
+
+            // 少し待ってから「飛ばす」
+            setTimeout(() => {
+                pairs.forEach(id => {
+                    const el = document.getElementById("card-" + id);
+                    if(el) el.classList.add('discard-fly');
+                });
+                
+                setTimeout(() => { 
+                    socket.send("DISCARD_DONE");
+                    animating = false;
+                    updateUI();
+                }, 900);
+            }, 600);
         } else {
             socket.send("DISCARD_DONE");
             animating = false;
