@@ -2,38 +2,113 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Web Old Maid</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Old Maid - オンラインババ抜き</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background-color: #2e7d32; color: white; margin-top: 50px; }
-        #hand { display: flex; justify-content: center; gap: 5px; margin-top: 20px; flex-wrap: wrap; }
-        .card-img { width: 80px; height: auto; transition: transform 0.2s; }
-        .card-img:hover { transform: translateY(-10px); cursor: pointer; }
+        /* 全体のデザイン */
+        body { 
+            font-family: 'Helvetica Neue', Arial, sans-serif; 
+            text-align: center; 
+            background-color: #2e7d32; /* カジノテーブルのような深緑 */
+            color: white; 
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 10px;
+        }
+
+        #status {
+            font-size: 1.2em;
+            background: rgba(0,0,0,0.3);
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* カードを並べるエリア */
+        #hand { 
+            display: flex; 
+            justify-content: center; 
+            gap: 12px; /* カード同士の隙間 */
+            margin-top: 20px; 
+            flex-wrap: wrap; /* 画面幅に合わせて自動で折り返す */
+            padding: 20px;
+            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* 1枚のカードの「白い枠」 */
+        .card-wrapper {
+            background-color: white; /* 透明な画像でもここが白くなる */
+            border-radius: 8px; /* 角を少し丸く */
+            padding: 4px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4); /* 立体的な影 */
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* カード画像自体のサイズ */
+        .card-img { 
+            width: 80px; /* PCで見やすいサイズ */
+            height: auto; 
+            display: block;
+            border-radius: 4px;
+        }
+
+        /* マウスを乗せた時のアニメーション */
+        .card-wrapper:hover { 
+            transform: translateY(-20px) rotate(2deg); /* 上に浮かせて少し傾ける */
+            box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+            z-index: 100;
+        }
+
+        /* スマホ向けの調整 */
+        @media (max-width: 600px) {
+            .card-img { width: 60px; }
+            #hand { gap: 8px; }
+        }
     </style>
 </head>
 <body>
+
     <div id="main-display">
         <h1>Web Old Maid</h1>
-        <p id="status">接続中...</p>
+        <p id="status">サーバーに接続しています...</p>
     </div>
+    
     <div id="hand"></div>
 
     <script>
+        // あなたのRenderのURL
         const socket = new WebSocket('wss://old-maid-online.onrender.com');
 
         socket.onopen = () => {
             document.getElementById('status').innerText = "接続成功！対戦相手を待っています...";
+            document.getElementById('status').style.color = "#81c784";
         };
 
         socket.onmessage = (event) => {
             const msg = event.data;
-            console.log("受信メッセージ:", msg);
+            console.log("受信:", msg);
 
+            // サーバーから手札データが届いた時
             if (msg.startsWith("HAND:")) {
                 const cardNumbers = msg.replace("HAND:", "").split(",");
                 const handDiv = document.getElementById('hand');
-                handDiv.innerHTML = ""; 
+                handDiv.innerHTML = ""; // 画面を一度空にする
 
-                // あなたのファイル名規則 [値]_of_[マーク].png に変換
+                // カードのマークと数字の定義
                 const suits = ["hearts", "spades", "diamonds", "clubs"];
                 const values = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
 
@@ -42,29 +117,48 @@
                     let fileName = "";
 
                     if (n === 53) {
-                        fileName = "black_joker.png"; // ジョーカーの名前を確認！
+                        fileName = "black_joker.png"; // ジョーカー
                     } else {
+                        // 1〜52の数字をファイル名に変換
                         const suit = suits[Math.floor((n - 1) / 13)];
                         const value = values[(n - 1) % 13];
                         fileName = `${value}_of_${suit}.png`; 
                     }
 
+                    // --- カードの要素を作成 ---
+                    // 1. 白い外枠
+                    const wrapper = document.createElement('div');
+                    wrapper.className = "card-wrapper";
+
+                    // 2. 画像
                     const img = document.createElement('img');
-                    // images/png/ フォルダの中にある場合
                     img.src = `images/png/${fileName}`; 
                     img.className = "card-img";
                     
-                    // 画像がない場合の身代わり（デバッグ用）
+                    // 画像の読み込みに失敗した場合の処理
                     img.onerror = () => {
-                        console.error("画像未発見:", img.src);
-                        img.alt = fileName; // 画像が出ない時に名前だけ出す
+                        console.error("画像が見つかりません:", img.src);
+                        wrapper.style.display = "none"; 
                     };
-                    
-                    handDiv.appendChild(img);
+
+                    // 3. 組み立てて画面に追加
+                    wrapper.appendChild(img);
+                    handDiv.appendChild(wrapper);
+
+                    // カードをクリックした時の反応（今はコンソールに出るだけ）
+                    wrapper.onclick = () => {
+                        console.log("クリックされたカード:", fileName);
+                    };
                 });
                 
                 document.getElementById('status').innerText = "対戦開始！あなたの手札です。";
+                document.getElementById('status').style.color = "yellow";
             }
+        };
+
+        socket.onclose = () => {
+            document.getElementById('status').innerText = "サーバーから切断されました。再読み込みしてください。";
+            document.getElementById('status').style.color = "#e57373";
         };
     </script>
 </body>
