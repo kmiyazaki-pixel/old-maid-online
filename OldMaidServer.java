@@ -110,6 +110,10 @@ public class OldMaidServer extends WebSocketServer {
 
         // ペアを捨ててターン交代
         hands.put(conn, removePairs(hands.get(conn)));
+        
+        // ★追加：捨てた後も念のためシャッフル
+  　　  Collections.shuffle(hands.get(conn));
+        
         roomTurns.put(rid, (roomTurns.get(rid) + 1) % 2);
 
         // 勝利判定。決着がついていなければ次の状態を送信
