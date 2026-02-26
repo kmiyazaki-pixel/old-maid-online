@@ -36,7 +36,7 @@
 </div>
 
 <div id="game-screen">
-    <div id="status-bar">対戦相手を待っています...</div>
+    <div id="status-bar">Connecting...</div>
     <div id="opp-hand-area" class="hand-area"></div>
     <div id="control-panel"></div>
     <div class="divider"></div>
@@ -44,9 +44,9 @@
 </div>
 
 <script>
-    // URLはご自身のものに書き換えてください
     const socket = new WebSocket('wss://old-maid-online.onrender.com');
     let myHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
+    let isFirstLoad = true;
 
     socket.onmessage = (e) => {
         const data = e.data;
@@ -56,9 +56,14 @@
             oppCount = parseInt(count);
             isTurn = (turn === "true");
             
-            // 演出中でなければ即描画。演出中なら、演出終了後にupdateUIが呼ばれる。
-            if (!animating) {
-                document.getElementById('room-overlay').style.display = "none";
+            document.getElementById('room-overlay').style.display = "none";
+            
+            // 初回入室時のみ、即座にペアチェックを走らせる
+            if (isFirstLoad) {
+                isFirstLoad = false;
+                updateUI();
+                checkPairs();
+            } else if (!animating) {
                 updateUI();
             }
         } else if (data.startsWith("WINNER:")) {
@@ -72,13 +77,24 @@
         if(rid && socket.readyState === 1) socket.send("JOIN_ROOM:" + rid);
     }
 
+    function getCardFile(n) {
+        if (n === 53) return "black_joker.png";
+        const suits = ['hearts', 'spades', 'diamonds', 'clubs'];
+        const suit = suits[Math.floor((n-1)/13)];
+        let val = (n-1) % 13 + 1;
+        if (val === 1) val = "ace";
+        else if (val === 11) val = "jack";
+        else if (val === 12) val = "queen";
+        else if (val === 13) val = "king";
+        return `${val}_of_${suit}.png`;
+    }
+
     function updateUI() {
         const oppArea = document.getElementById('opp-hand-area');
         const myArea = document.getElementById('my-hand');
         const status = document.getElementById('status-bar');
         const panel = document.getElementById('control-panel');
 
-        // 相手の手札
         oppArea.innerHTML = "";
         for (let i = 0; i < oppCount; i++) {
             const wrap = document.createElement('div');
@@ -90,7 +106,6 @@
             oppArea.appendChild(wrap);
         }
 
-        // 自分の手札
         myArea.innerHTML = "";
         myHand.forEach((n, i) => {
             const c = document.createElement('div');
@@ -98,13 +113,10 @@
             c.id = "card-" + n;
             const x = (i - (myHand.length-1)/2) * 45;
             c.style.transform = `translateX(${x}px)`;
-            const suit = ['hearts','spades','diamonds','clubs'][Math.floor((n-1)/13)];
-            const val = (n === 53) ? "joker" : (n-1)%13+1;
-            c.innerHTML = `<img src="images/png/${n===53?'black_joker':val+'_of_'+suit}.png" style="width:100%;height:100%;border-radius:5px;pointer-events:none;">`;
+            c.innerHTML = `<img src="images/png/${getCardFile(n)}" style="width:100%;height:100%;border-radius:5px;pointer-events:none;" onerror="this.src='https://via.placeholder.com/100x150?text=Card'">`;
             myArea.appendChild(c);
         });
 
-        // ボタンとステータス
         status.innerText = isTurn ? "あなたの番です！" : "相手が引いています...";
         status.style.color = isTurn ? "#ffd700" : "white";
         
@@ -119,24 +131,19 @@
         }
     }
 
-    function move(dir) {
-        if(!isTurn || animating || oppCount === 0) return;
-        selectedIdx = (selectedIdx + dir + oppCount) % oppCount;
-        updateUI();
-    }
-
     function confirmDraw() {
         if(!isTurn || animating || oppCount === 0) return;
         animating = true;
-        const btn = document.getElementById('draw-confirm');
-        if(btn) btn.disabled = true;
-
+        document.getElementById('draw-confirm').disabled = true;
         socket.send("DRAW:" + selectedIdx);
 
-        // カードを引いてから「自分の手札を確認する」時間を1.5秒作る
+        // 引いたカードを確認する時間をしっかり確保
         setTimeout(() => {
-            checkPairs();
-        }, 1500);
+            updateUI(); // 自分の手札に加わった状態を描画
+            setTimeout(() => {
+                checkPairs(); // その後ペアを捨てる
+            }, 1000);
+        }, 500);
     }
 
     function checkPairs() {
@@ -146,22 +153,27 @@
         Object.values(counts).forEach(arr => { while(arr.length >= 2) pairs.push(arr.pop(), arr.pop()); });
 
         if (pairs.length > 0) {
+            animating = true;
             pairs.forEach(id => {
                 const el = document.getElementById("card-" + id);
                 if(el) el.classList.add('discard');
             });
-            // 捨てるアニメーションを待ってからサーバーへ通知
             setTimeout(() => { 
                 socket.send("DISCARD_DONE");
-                animating = false; 
+                animating = false;
                 updateUI();
             }, 800);
         } else {
-            // ペアがないなら即座にターン終了（枚数確認含む）
             socket.send("DISCARD_DONE");
             animating = false;
             updateUI();
         }
+    }
+
+    function move(dir) {
+        if(!isTurn || animating || oppCount === 0) return;
+        selectedIdx = (selectedIdx + dir + oppCount) % oppCount;
+        updateUI();
     }
 
     window.onkeydown = (e) => {
