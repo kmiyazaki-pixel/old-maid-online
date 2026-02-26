@@ -8,7 +8,11 @@
         body { font-family: 'Segoe UI', sans-serif; text-align: center; background: radial-gradient(circle, #2e7d32, #1b5e20); color: white; margin: 0; height: 100vh; overflow: hidden; }
         #room-select { position: fixed; inset: 0; background: #1b5e20; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 3000; }
         input { padding: 15px; font-size: 1.2rem; border-radius: 30px; border: none; margin: 15px; width: 250px; text-align: center; }
-        button { padding: 12px 30px; font-size: 1.1rem; cursor: pointer; background: #ffd700; border: none; border-radius: 30px; font-weight: bold; color: #333; transition: 0.3s; }
+        
+        /* 入室ボタンのスタイル（無効時はグレー） */
+        #join-btn { padding: 12px 30px; font-size: 1.1rem; cursor: pointer; background: #ffd700; border: none; border-radius: 30px; font-weight: bold; color: #333; transition: 0.3s; }
+        #join-btn:disabled { background: #666; color: #aaa; cursor: wait; }
+        
         #status { font-size: 1.4rem; padding: 20px; background: rgba(0,0,0,0.4); min-height: 1.5em; }
         .hand-container { position: relative; height: 180px; display: flex; justify-content: center; align-items: center; padding: 20px; margin-top: 20px; }
         .card-wrapper { position: absolute; width: var(--card-w); height: var(--card-h); background: white; border-radius: 10px; padding: 5px; box-shadow: 0 6px 12px rgba(0,0,0,0.4); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 1px solid #ddd; }
@@ -30,10 +34,11 @@
 <body>
     <div id="room-select">
         <h1>ROYAL OLD MAID</h1>
+        <p id="connection-msg" style="color: #ffd700;">サーバーを起動中... (最大1分かかります)</p>
         <input type="text" id="room-id-input" placeholder="Room ID">
-        <button onclick="joinRoom()">入室する</button>
+        <button onclick="joinRoom()" id="join-btn" disabled>入室する</button>
     </div>
-    <div id="status">サーバーに接続中...</div>
+    <div id="status">サーバー接続待ち...</div>
     <div id="opponent-hand" class="hand-container"></div>
     <div id="control-panel"></div>
     <div style="height: 1px; background: rgba(255,255,255,0.1); width: 80%; margin: 15px auto;"></div>
@@ -47,16 +52,49 @@
     </div>
 
     <script>
-        // WebSocketのURL（RenderのURLに変更してください）
-        const socket = new WebSocket('wss://old-maid-online.onrender.com');
+        // WebSocketのURL（RenderのURLに必ず変更してください）
+        const SERVER_URL = 'wss://old-maid-online.onrender.com';
+        let socket;
         let isAnimating = false, selectedIndex = 0, currentOppCount = 0, myTurn = false;
 
-        socket.onopen = () => { document.getElementById('status').innerText = "ルームIDを入力してください"; };
-        socket.onclose = () => { document.getElementById('status').innerText = "切断されました。再読み込みしてください。"; };
+        function connect() {
+            socket = new WebSocket(SERVER_URL);
+
+            socket.onopen = () => { 
+                document.getElementById('status').innerText = "接続完了！ルームIDを入力してください";
+                document.getElementById('connection-msg').innerText = "サーバーはオンラインです";
+                document.getElementById('connection-msg').style.color = "#4caf50";
+                document.getElementById('join-btn').disabled = false;
+            };
+
+            socket.onclose = () => { 
+                document.getElementById('status').innerText = "切断されました。再読み込みして再試行してください。";
+                document.getElementById('join-btn').disabled = true;
+                // 自動再接続を試みる（3秒後）
+                setTimeout(connect, 3000);
+            };
+
+            socket.onmessage = (event) => {
+                const data = event.data;
+                if (data.startsWith("STATE|")) {
+                    document.getElementById('result-overlay').style.display = "none";
+                    const [_, handStr, oppCount, isTurn] = data.split("|");
+                    myTurn = (isTurn === "true"); currentOppCount = parseInt(oppCount);
+                    renderGame(handStr.split(",").filter(s=>s).map(Number), currentOppCount, myTurn);
+                } else if (data.startsWith("WINNER:")) { 
+                    showResult(data.split(":")[1]); 
+                } else if (data === "OPPONENT_LEFT") { 
+                    alert("相手が退出しました"); location.reload(); 
+                }
+            };
+        }
+
+        // 初期接続開始
+        connect();
 
         function joinRoom() {
             const id = document.getElementById('room-id-input').value;
-            if (id && socket.readyState === 1) { 
+            if (id && socket.readyState === WebSocket.OPEN) { 
                 socket.send("JOIN_ROOM:" + id); 
                 document.getElementById('room-select').style.display = "none"; 
             }
@@ -65,22 +103,7 @@
         function requestRematch() { 
             socket.send("REMATCH_REQUEST"); 
             event.target.disabled = true; 
-            event.target.innerText = "待機中...";
         }
-
-        socket.onmessage = (event) => {
-            const data = event.data;
-            if (data.startsWith("STATE|")) {
-                document.getElementById('result-overlay').style.display = "none";
-                const [_, handStr, oppCount, isTurn] = data.split("|");
-                myTurn = (isTurn === "true"); currentOppCount = parseInt(oppCount);
-                renderGame(handStr.split(",").filter(s=>s).map(Number), currentOppCount, myTurn);
-            } else if (data.startsWith("WINNER:")) { 
-                showResult(data.split(":")[1]); 
-            } else if (data === "OPPONENT_LEFT") { 
-                alert("相手が退出しました"); location.reload(); 
-            }
-        };
 
         function renderGame(myCards, oppCount, isTurn) {
             const myDiv = document.getElementById('my-hand'), 
@@ -130,7 +153,9 @@
                     setTimeout(() => { socket.send("DISCARD_DONE"); }, 1500);
                 } else {
                     isAnimating = false;
-                    if (myCards.length === 0 || oppCount === 0) { socket.send("DISCARD_DONE"); } 
+                    if (myCards.length === 0 || oppCount === 0) { 
+                        if (socket.readyState === WebSocket.OPEN) socket.send("DISCARD_DONE"); 
+                    } 
                     else {
                         status.innerText = isTurn ? "あなたの番です！" : "相手が選び中...";
                         status.style.color = isTurn ? "#ffd700" : "white";
@@ -140,7 +165,7 @@
         }
 
         function moveCursor(dir) { if (currentOppCount > 0 && !isAnimating) { selectedIndex = (selectedIndex + dir + currentOppCount) % currentOppCount; updateCursor(); } }
-        function updateCursor() { document.querySelectorAll('.card-back').forEach((el, i) => { const a = el.querySelector('.cursor-arrow'); if (i === selectedIndex) { el.classList.add('selected-card'); a.style.display = "block"; } else { el.classList.remove('selected-card'); a.style.display = "none"; } }); }
+        function updateCursor() { document.querySelectorAll('.card-back').forEach((el, i) => { const a = el.querySelector('.cursor-arrow'); if (i === selectedIndex) { el.classList.add('selected-card'); if(a) a.style.display = "block"; } else { el.classList.remove('selected-card'); if(a) a.style.display = "none"; } }); }
         function confirmDraw() { if (myTurn && !isAnimating && currentOppCount > 0) { isAnimating = true; socket.send("DRAW:" + selectedIndex); const b = document.getElementById('final-btn'); if(b) b.disabled = true; } }
         function showResult(msg) { const o = document.getElementById('result-overlay'), t = document.getElementById('result-text'); t.innerText = msg; t.className = msg.includes("WIN") ? "win" : "lose"; o.style.display = "flex"; }
         window.addEventListener('keydown', (e) => { if (myTurn && !isAnimating) { if (e.key === "ArrowLeft") moveCursor(-1); if (e.key === "ArrowRight") moveCursor(1); if (e.key === "Enter") confirmDraw(); } });
