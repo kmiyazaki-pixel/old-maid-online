@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Old Maid - Battle Mode</title>
+    <title>Web Old Maid - Complete Edition</title>
     <style>
         body { 
             font-family: 'Helvetica Neue', Arial, sans-serif; 
@@ -11,11 +11,11 @@
         }
         #status { font-size: 1.3em; padding: 15px; background: rgba(0,0,0,0.6); margin-bottom: 20px; }
         #opponent-hand, #my-hand { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 20px; min-height: 120px; }
+        
         .card-wrapper { background: white; border-radius: 8px; padding: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: 0.3s; }
         .card-img { width: 75px; display: block; border-radius: 4px; }
         .card-wrapper:hover { transform: translateY(-15px); }
 
-        /* 裏面デザイン */
         .card-back {
             width: 75px; height: 112px; background-color: #b71c1c;
             background-image: repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(255,255,255,.1) 7px, rgba(255,255,255,.1) 14px),
@@ -24,10 +24,15 @@
         }
         .card-back:hover { transform: translateY(15px); background-color: #d32f2f; }
 
-        /* 捨てる演出 */
+        /* 勝利時の特大テキスト */
+        #result-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); flex-direction: column; justify-content: center;
+            align-items: center; z-index: 2000; font-size: 5em; font-weight: bold;
+        }
+
         .discard-animation { animation: fly-out 1s ease-in forwards; z-index: 1000; pointer-events: none; }
         @keyframes fly-out { to { transform: translateY(-1000px) rotate(45deg); opacity: 0; } }
-        
         .deal-in { animation: deal-in-anim 0.5s ease-out backwards; }
         @keyframes deal-in-anim { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
@@ -38,12 +43,25 @@
     <div style="border-top: 2px dashed rgba(255,255,255,0.2); width: 80%; margin: 30px auto;"></div>
     <div id="my-hand"></div>
 
+    <div id="result-overlay"></div>
+
     <script>
         const socket = new WebSocket('wss://old-maid-online.onrender.com');
         let canDraw = false;
 
         socket.onmessage = (event) => {
             const data = event.data;
+            
+            // 勝利判定メッセージ
+            if (data.startsWith("WINNER:")) {
+                const msg = data.replace("WINNER:", "");
+                const overlay = document.getElementById('result-overlay');
+                overlay.innerText = msg;
+                overlay.style.display = "flex";
+                overlay.style.color = msg.includes("WIN") ? "#FFD700" : "#ff5252";
+                return;
+            }
+
             if (data.startsWith("STATE|")) {
                 const [_, myCardsStr, oppCount, isTurn] = data.split("|");
                 const myCards = myCardsStr ? myCardsStr.split(",").filter(s => s !== "").map(Number) : [];
