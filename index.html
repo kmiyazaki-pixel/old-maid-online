@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Royal Old Maid - Professional</title>
+    <title>Royal Old Maid - Ultimate Edition</title>
     <style>
         :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #071a08; color: white; margin: 0; overflow: hidden; text-align: center; }
@@ -19,7 +19,6 @@
 
         .hand-area { position: relative; height: 220px; width: 100%; display: flex; justify-content: center; align-items: flex-end; perspective: 1200px; }
 
-        /* カードの基本：transition を 0.6s にして入れ替わりを見せる */
         .card-wrapper { 
             position: absolute; width: var(--card-w); height: var(--card-h); 
             border-radius: 12px; transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); 
@@ -40,12 +39,10 @@
             color: var(--gold); font-size: 3rem; display: none; filter: drop-shadow(0 0 8px orange);
         }
         
-        /* 選択時 */
         .selected { transform: translateY(-40px) scale(1.1) !important; z-index: 500 !important; box-shadow: 0 15px 30px rgba(255, 215, 0, 0.4); }
         .selected .cursor-arrow { display: block; animation: bounce 0.6s infinite alternate; }
         @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-15px); } }
 
-        /* 捨てる演出 */
         .discard-target { z-index: 1000 !important; transform: scale(1.2) translateY(-20px) !important; filter: brightness(1.5); }
         .discard-fly { animation: discardAnim 0.8s ease-in forwards; pointer-events: none; }
         @keyframes discardAnim {
@@ -69,6 +66,8 @@
 </head>
 <body>
 
+<audio id="bgm" src="audio/bgm.mp3" loop></audio>
+
 <div id="room-overlay">
     <h1 style="color:var(--gold);">ROYAL OLD MAID</h1>
     <input type="text" id="room-input" placeholder="Room ID">
@@ -85,6 +84,7 @@
 
 <script>
     const socket = new WebSocket('wss://old-maid-online.onrender.com');
+    const bgm = document.getElementById('bgm');
     let myHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
     let isFirstLoad = true;
 
@@ -113,7 +113,12 @@
 
     function join() {
         const rid = document.getElementById('room-input').value;
-        if(rid && socket.readyState === 1) socket.send("JOIN_ROOM:" + rid);
+        if(rid && socket.readyState === 1) {
+            socket.send("JOIN_ROOM:" + rid);
+            // 入室時にBGM開始
+            bgm.volume = 0.2;
+            bgm.play().catch(e => console.log("Audio play blocked until interaction"));
+        }
     }
 
     function getCardFile(n) {
@@ -130,27 +135,22 @@
 
     function updateUI() {
         if (animating) return;
-        
         const oppArea = document.getElementById('opp-hand-area');
         const myArea = document.getElementById('my-hand');
         
-        // 1. 相手の手札（枚数分、一意なIDで管理）
         renderOpponentCards(oppArea);
-        
-        // 2. 自分の手札（カード番号をIDにして管理）
         renderMyCards(myArea);
 
-        // 3. ボタンとステータス
         const status = document.getElementById('status-bar');
         const panel = document.getElementById('control-panel');
-        status.innerText = isTurn ? "YOUR TURN" : "OPPONENT DRAWING...";
+        status.innerText = isTurn ? "あなたの番です！" : "相手が引いています...";
         status.style.color = isTurn ? "var(--gold)" : "#aaa";
         
         if (isTurn && oppCount > 0) {
             panel.innerHTML = `
-                <button class="nav-btn" onclick="move(-1)">◀ LEFT</button>
-                <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">DRAW THIS CARD</button>
-                <button class="nav-btn" onclick="move(1)">RIGHT ▶</button>
+                <button class="nav-btn" onclick="move(-1)">◀ 左へ</button>
+                <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">このカードを引く</button>
+                <button class="nav-btn" onclick="move(1)">右へ ▶</button>
             `;
         } else {
             panel.innerHTML = "";
@@ -158,10 +158,6 @@
     }
 
     function renderOpponentCards(container) {
-        // 現在表示されているカードIDを取得
-        const currentCards = Array.from(container.children);
-        
-        // 足りない分を追加、多い分を削除
         while (container.children.length < oppCount) {
             const div = document.createElement('div');
             div.className = "card-wrapper card-back";
@@ -170,14 +166,11 @@
         while (container.children.length > oppCount) {
             container.removeChild(container.lastChild);
         }
-
-        // 全カードの位置を更新（シャッフル対応）
         Array.from(container.children).forEach((el, i) => {
             const x = (i - (oppCount-1)/2) * 35;
             const rot = (i - (oppCount-1)/2) * 2;
             el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
             el.style.zIndex = i;
-            
             if (isTurn && i === selectedIdx) {
                 el.classList.add('selected');
                 el.innerHTML = `<div class="cursor-arrow">▼</div>`;
@@ -189,17 +182,12 @@
     }
 
     function renderMyCards(container) {
-        // カード番号をキーにしてDOMを維持
         const existingIds = myHand.map(n => `card-${n}`);
-        
-        // 存在しないカード（捨てられたカード）を消す
         Array.from(container.children).forEach(el => {
             if (!existingIds.includes(el.id) && !el.classList.contains('discard-fly')) {
                 container.removeChild(el);
             }
         });
-
-        // 新しいカードを追加 & 全カードの位置更新
         myHand.forEach((n, i) => {
             let el = document.getElementById(`card-${n}`);
             if (!el) {
@@ -221,11 +209,8 @@
         animating = true;
         const btn = document.getElementById('draw-confirm');
         if(btn) btn.disabled = true;
-
         socket.send("DRAW:" + selectedIdx);
-
         setTimeout(() => {
-            // シャッフル後の状態を描画
             updateUI(); 
             setTimeout(checkPairs, 1200); 
         }, 500);
@@ -243,13 +228,11 @@
                 const el = document.getElementById("card-" + id);
                 if(el) el.classList.add('discard-target');
             });
-
             setTimeout(() => {
                 pairs.forEach(id => {
                     const el = document.getElementById("card-" + id);
                     if(el) el.classList.add('discard-fly');
                 });
-                
                 setTimeout(() => { 
                     socket.send("DISCARD_DONE");
                     animating = false;
