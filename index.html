@@ -5,81 +5,65 @@
     <title>Web Old Maid</title>
     <style>
         body { font-family: sans-serif; text-align: center; background-color: #2e7d32; color: white; margin-top: 50px; }
-        #hand { display: flex; justify-content: center; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
-        .card { 
-            width: 80px; height: 120px; background-color: white; border-radius: 8px; 
-            color: black; display: flex; align-items: center; justify-content: center;
-            font-size: 24px; font-weight: bold; border: 2px solid #000;
-            box-shadow: 3px 3px 5px rgba(0,0,0,0.3);
-        }
-        .joker { color: red; border: 2px solid red; }
+        #hand { display: flex; justify-content: center; gap: 5px; margin-top: 20px; flex-wrap: wrap; }
+        .card-img { width: 80px; height: auto; transition: transform 0.2s; }
+        .card-img:hover { transform: translateY(-10px); cursor: pointer; }
     </style>
 </head>
 <body>
-
     <div id="main-display">
         <h1>Web Old Maid</h1>
-        <p id="status">接続成功！対戦相手を待っています...</p>
+        <p id="status">接続中...</p>
     </div>
-    
     <div id="hand"></div>
 
     <script>
         const socket = new WebSocket('wss://old-maid-online.onrender.com');
 
+        socket.onopen = () => {
+            document.getElementById('status').innerText = "接続成功！対戦相手を待っています...";
+        };
+
         socket.onmessage = (event) => {
-    const msg = event.data;
+            const msg = event.data;
+            console.log("受信メッセージ:", msg);
 
-    if (msg.startsWith("HAND:")) {
-        const cardNumbers = msg.replace("HAND:", "").split(",");
-        const handDiv = document.getElementById('hand');
-        handDiv.innerHTML = ""; 
-
-        // トランプのマークと数字のリスト
-        const suits = ["hearts", "spades", "diamonds", "clubs"];
-        const values = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
-
-        cardNumbers.forEach(num => {
-            const n = parseInt(num);
-            let fileName = "";
-
-            if (n === 53) {
-                fileName = "joker.png"; // ジョーカーの場合
-            } else {
-                // 数字からマークとカード名を計算
-                const suit = suits[Math.floor((n - 1) / 13)];
-                const value = values[(n - 1) % 13];
-                fileName = `${value}_of_${suit}.png`; 
-            }
-
-            const img = document.createElement('img');
-            // フォルダの階層（images/png/）に合わせて指定
-            img.src = `images/png/${fileName}`; 
-            img.className = "card-img";
-            
-            // 画像が見つからないときのエラーチェック用
-            img.onerror = () => console.error("見つからない画像:", img.src);
-            
-            handDiv.appendChild(img);
-        });
-    }
-
-    if (msg === "GAME_START:対戦開始！") {
-        document.getElementById('status').innerText = "対戦開始！あなたのデザインで遊べます！";
-    }
-};
-                
-                // 仮の手札を表示してみる（後でサーバーから本物を受け取ります）
+            if (msg.startsWith("HAND:")) {
+                const cardNumbers = msg.replace("HAND:", "").split(",");
                 const handDiv = document.getElementById('hand');
-                const myHand = ["♠A", "♥7", "♣K", "JOKER"];
-                
-                handDiv.innerHTML = ""; // 一旦空にする
-                myHand.forEach(card => {
-                    const cardElement = document.createElement('div');
-                    cardElement.className = card === "JOKER" ? "card joker" : "card";
-                    cardElement.innerText = card;
-                    handDiv.appendChild(cardElement);
+                handDiv.innerHTML = ""; 
+
+                // あなたのファイル名規則 [値]_of_[マーク].png に変換
+                const suits = ["hearts", "spades", "diamonds", "clubs"];
+                const values = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
+
+                cardNumbers.forEach(num => {
+                    const n = parseInt(num);
+                    let fileName = "";
+
+                    if (n === 53) {
+                        fileName = "black_joker.png"; // ジョーカーの名前を確認！
+                    } else {
+                        const suit = suits[Math.floor((n - 1) / 13)];
+                        const value = values[(n - 1) % 13];
+                        fileName = `${value}_of_${suit}.png`; 
+                    }
+
+                    const img = document.createElement('img');
+                    // images/png/ フォルダの中にある場合
+                    img.src = `images/png/${fileName}`; 
+                    img.className = "card-img";
+                    
+                    // 画像がない場合の身代わり（デバッグ用）
+                    img.onerror = () => {
+                        console.error("画像未発見:", img.src);
+                        img.alt = fileName; // 画像が出ない時に名前だけ出す
+                    };
+                    
+                    handDiv.appendChild(img);
                 });
+                
+                document.getElementById('status').innerText = "対戦開始！あなたの手札です。";
             }
         };
     </script>
