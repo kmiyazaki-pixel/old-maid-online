@@ -28,24 +28,46 @@
         const socket = new WebSocket('wss://old-maid-online.onrender.com');
 
         socket.onmessage = (event) => {
-            const msg = event.data;
+    const msg = event.data;
 
     if (msg.startsWith("HAND:")) {
-        // "HAND:1,5,12" を [1, 5, 12] という数字のリストに変換
         const cardNumbers = msg.replace("HAND:", "").split(",");
         const handDiv = document.getElementById('hand');
-        handDiv.innerHTML = ""; // 画面をリセット
+        handDiv.innerHTML = ""; 
+
+        // トランプのマークと数字のリスト
+        const suits = ["hearts", "spades", "diamonds", "clubs"];
+        const values = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
 
         cardNumbers.forEach(num => {
+            const n = parseInt(num);
+            let fileName = "";
+
+            if (n === 53) {
+                fileName = "joker.png"; // ジョーカーの場合
+            } else {
+                // 数字からマークとカード名を計算
+                const suit = suits[Math.floor((n - 1) / 13)];
+                const value = values[(n - 1) % 13];
+                fileName = `${value}_of_${suit}.png`; 
+            }
+
             const img = document.createElement('img');
-            // あなたがアップロードした画像ファイル名に合わせて調整してください
-            img.src = `images/${num}.png`; 
+            // フォルダの階層（images/png/）に合わせて指定
+            img.src = `images/png/${fileName}`; 
             img.className = "card-img";
+            
+            // 画像が見つからないときのエラーチェック用
+            img.onerror = () => console.error("見つからない画像:", img.src);
+            
             handDiv.appendChild(img);
         });
     }
-            if (event.data === "GAME_START:対戦開始！") {
-                document.getElementById('status').innerText = "対戦開始！あなたの手札:";
+
+    if (msg === "GAME_START:対戦開始！") {
+        document.getElementById('status').innerText = "対戦開始！あなたのデザインで遊べます！";
+    }
+};
                 
                 // 仮の手札を表示してみる（後でサーバーから本物を受け取ります）
                 const handDiv = document.getElementById('hand');
