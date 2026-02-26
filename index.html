@@ -2,39 +2,75 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web Old Maid - Battle Mode</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background-color: #1b5e20; color: white; margin: 0; overflow: hidden; }
-        #status { font-size: 1.2em; padding: 10px; background: rgba(0,0,0,0.5); }
+        body { 
+            font-family: 'Helvetica Neue', Arial, sans-serif; 
+            text-align: center; 
+            background-color: #1b5e20; 
+            color: white; 
+            margin: 0; 
+            overflow-x: hidden; 
+        }
+        #status { 
+            font-size: 1.3em; 
+            padding: 15px; 
+            background: rgba(0,0,0,0.6); 
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
         
-        /* 相手の手札エリア（上） */
-        #opponent-hand { display: flex; justify-content: center; gap: -20px; margin-top: 20px; height: 150px; }
-        
-        /* 自分の手札エリア（下） */
-        #my-hand { display: flex; justify-content: center; gap: 10px; margin-top: 100px; flex-wrap: wrap; }
+        /* エリア設定 */
+        #opponent-hand, #my-hand { 
+            display: flex; 
+            justify-content: center; 
+            gap: 10px; 
+            flex-wrap: wrap; 
+            padding: 20px; 
+            min-height: 120px;
+        }
 
-        .card-wrapper { background: white; border-radius: 5px; padding: 3px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); transition: 0.3s; }
-        .card-img { width: 70px; display: block; }
-        
-        /* 相手のカード（裏向き） */
-        .opponent-card { cursor: pointer; border: 2px solid transparent; }
-        .opponent-card:hover { transform: translateY(10px); border-color: yellow; }
+        /* 自分のカード（表面） */
+        .card-wrapper {
+            background: white; 
+            border-radius: 8px; 
+            padding: 4px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+            transition: 0.3s;
+        }
+        .card-img { width: 75px; display: block; border-radius: 4px; }
+        .card-wrapper:hover { transform: translateY(-15px); }
 
-        /* ターンの強調 */
-        .my-turn { border: 4px solid gold; border-radius: 10px; }
+        /* 相手のカード（裏面：CSSで生成） */
+        .card-back {
+            width: 75px; height: 112px;
+            background-color: #b71c1c;
+            background-image: 
+                repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(255,255,255,.1) 7px, rgba(255,255,255,.1) 14px),
+                repeating-linear-gradient(-45deg, transparent, transparent 7px, rgba(255,255,255,.1) 7px, rgba(255,255,255,.1) 14px);
+            border: 3px solid white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .card-back:hover { transform: translateY(15px); background-color: #d32f2f; }
 
-        .discard-animation { animation: fly-out 1s forwards; }
+        /* アニメーション */
+        .discard-animation { animation: fly-out 1s forwards; pointer-events: none; }
         @keyframes fly-out { to { transform: translateY(-1000px) rotate(45deg); opacity: 0; } }
+        
+        .deal-in { animation: deal-in-anim 0.5s ease-out backwards; }
+        @keyframes deal-in-anim { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
 </head>
 <body>
 
-    <p id="status">接続中...</p>
+    <div id="status">サーバー接続待ち...</div>
 
     <div id="opponent-hand"></div>
-
-    <hr style="border: 1px dashed rgba(255,255,255,0.2); margin: 40px 0;">
-
+    <div style="border-top: 2px dashed rgba(255,255,255,0.2); width: 80%; margin: 30px auto;"></div>
     <div id="my-hand"></div>
 
     <script>
@@ -43,47 +79,69 @@
 
         socket.onmessage = (event) => {
             const data = event.data;
-
             if (data.startsWith("STATE|")) {
-                const parts = data.split("|");
-                const myCards = parts[1].split(",").map(Number);
-                const opponentCount = parseInt(parts[2]);
-                const isMyTurn = parts[3] === "true";
-                canDraw = isMyTurn;
-
-                updateUI(myCards, opponentCount, isMyTurn);
+                const [_, myCardsStr, oppCount, isTurn] = data.split("|");
+                const myCards = myCardsStr ? myCardsStr.split(",").map(Number) : [];
+                canDraw = (isTurn === "true");
+                updateUI(myCards, parseInt(oppCount), canDraw);
             }
         };
 
-        function updateUI(myCards, opponentCount, isMyTurn) {
+        function updateUI(myCards, oppCount, isTurn) {
             const status = document.getElementById('status');
-            status.innerText = isMyTurn ? "あなたの番です！相手のカードを1枚選んでください" : "相手の番です。待機中...";
-            status.style.background = isMyTurn ? "#d32f2f" : "rgba(0,0,0,0.5)";
+            status.innerText = isTurn ? "あなたの番です！相手のカードを1枚引いて！" : "相手が考え中...";
+            status.style.color = isTurn ? "#ffeb3b" : "white";
 
-            // 相手の手札を描画（裏面）
+            // 相手の手札
             const oppDiv = document.getElementById('opponent-hand');
             oppDiv.innerHTML = "";
-            for (let i = 0; i < opponentCount; i++) {
-                const card = document.createElement('div');
-                card.className = "card-wrapper opponent-card";
-                card.innerHTML = `<img src="images/png/back.png" class="card-img">`; // back.pngがある前提
-                card.onclick = () => { if(canDraw) socket.send("DRAW:" + i); };
-                oppDiv.appendChild(card);
+            for (let i = 0; i < oppCount; i++) {
+                const cb = document.createElement('div');
+                cb.className = "card-back";
+                cb.onclick = () => { if(canDraw) { socket.send("DRAW:" + i); canDraw = false; } };
+                oppDiv.appendChild(cb);
             }
 
-            // 自分の手札を描画（表面）
+            // 自分の手札
             const myDiv = document.getElementById('my-hand');
             myDiv.innerHTML = "";
             const suits = ["hearts", "spades", "diamonds", "clubs"];
             const values = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
 
-            myCards.forEach(n => {
+            myCards.forEach((n, idx) => {
                 const fileName = (n === 53) ? "black_joker.png" : `${values[(n - 1) % 13]}_of_${suits[Math.floor((n - 1) / 13)]}.png`;
-                const wrapper = document.createElement('div');
-                wrapper.className = "card-wrapper";
-                wrapper.innerHTML = `<img src="images/png/${fileName}" class="card-img">`;
-                myDiv.appendChild(wrapper);
+                const wrap = document.createElement('div');
+                wrap.className = "card-wrapper deal-in";
+                wrap.id = `card-${n}`;
+                wrap.style.animationDelay = `${idx * 0.05}s`;
+                wrap.innerHTML = `<img src="images/png/${fileName}" class="card-img">`;
+                myDiv.appendChild(wrap);
             });
+
+            // ペアチェック & 捨てる演出（前回の優雅なロジックを流用可能）
+            checkAndDiscard(myCards);
+        }
+
+        function checkAndDiscard(cards) {
+            const valMap = {};
+            cards.forEach(n => {
+                if(n === 53) return;
+                const v = (n - 1) % 13 + 1;
+                if(!valMap[v]) valMap[v] = [];
+                valMap[v].push(n);
+            });
+
+            setTimeout(() => {
+                Object.values(valMap).forEach(group => {
+                    while(group.length >= 2) {
+                        const p1 = group.pop(); const p2 = group.pop();
+                        const el1 = document.getElementById(`card-${p1}`);
+                        const el2 = document.getElementById(`card-${p2}`);
+                        if(el1) el1.classList.add('discard-animation');
+                        if(el2) el2.classList.add('discard-animation');
+                    }
+                });
+            }, 1000);
         }
     </script>
 </body>
