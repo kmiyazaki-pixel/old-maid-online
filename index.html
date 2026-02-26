@@ -28,6 +28,22 @@
         const socket = new WebSocket('wss://old-maid-online.onrender.com');
 
         socket.onmessage = (event) => {
+            const msg = event.data;
+
+    if (msg.startsWith("HAND:")) {
+        // "HAND:1,5,12" を [1, 5, 12] という数字のリストに変換
+        const cardNumbers = msg.replace("HAND:", "").split(",");
+        const handDiv = document.getElementById('hand');
+        handDiv.innerHTML = ""; // 画面をリセット
+
+        cardNumbers.forEach(num => {
+            const img = document.createElement('img');
+            // あなたがアップロードした画像ファイル名に合わせて調整してください
+            img.src = `images/${num}.png`; 
+            img.className = "card-img";
+            handDiv.appendChild(img);
+        });
+    }
             if (event.data === "GAME_START:対戦開始！") {
                 document.getElementById('status').innerText = "対戦開始！あなたの手札:";
                 
