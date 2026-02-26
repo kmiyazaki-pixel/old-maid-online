@@ -4,121 +4,181 @@
     <meta charset="UTF-8">
     <title>Royal Old Maid</title>
     <style>
-        :root { --card-w: 80px; --card-h: 120px; }
-        body { font-family: sans-serif; text-align: center; background: #1b5e20; color: white; margin: 0; overflow: hidden; }
-        #room-select { position: fixed; inset: 0; background: #1b5e20; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 3000; }
-        input { padding: 15px; font-size: 1.2rem; border-radius: 30px; border: none; margin: 10px; width: 200px; text-align: center; }
-        button { padding: 12px 30px; font-size: 1.1rem; cursor: pointer; background: #ffd700; border: none; border-radius: 30px; font-weight: bold; }
-        #status { font-size: 1.2rem; padding: 15px; background: rgba(0,0,0,0.3); }
-        .hand-container { position: relative; height: 160px; display: flex; justify-content: center; align-items: center; }
-        .card-wrapper { position: absolute; width: var(--card-w); height: var(--card-h); background: white; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); transition: 0.3s; }
-        .card-back { background: #c62828; border: 2px solid white; }
-        .selected-card { transform: translateY(20px) scale(1.1) !important; border: 3px solid #ffd700 !important; z-index: 100; }
-        #control-panel { display: flex; justify-content: center; gap: 10px; margin-top: 20px; min-height: 50px; }
-        #result-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 4000; flex-direction: column; justify-content: center; align-items: center; }
-        .discard-animation { animation: fly 1s forwards; }
-        @keyframes fly { 100% { transform: translateY(-600px) rotate(180deg); opacity: 0; } }
+        :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; --dark-bg: #1b5e20; }
+        body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #0e3b12; color: white; margin: 0; overflow: hidden; }
+        
+        /* メインコンテナ */
+        #game-screen { display: flex; flex-direction: column; align-items: center; height: 100vh; background: radial-gradient(circle, #1b5e20, #0a2b0e); }
+        
+        #status-bar { font-size: 1.8rem; font-weight: bold; color: var(--gold); margin: 30px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        
+        /* 相手の手札（扇状） */
+        .hand-area { position: relative; height: 250px; width: 100%; display: flex; justify-content: center; align-items: flex-end; perspective: 1000px; }
+        
+        .card-wrapper { position: absolute; width: var(--card-w); height: var(--card-h); border-radius: 8px; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
+        .card-back { background: #c62828; border: 3px solid white; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px); }
+        
+        /* スクショ通りのカーソル（指し示す黄色い▼と波紋） */
+        .cursor-arrow { position: absolute; top: -50px; left: 50%; transform: translateX(-50%); color: var(--gold); font-size: 2.5rem; display: none; filter: drop-shadow(0 0 5px orange); }
+        .selected .cursor-arrow { display: block; animation: bounce 0.4s infinite alternate; }
+        @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-10px); } }
+
+        .selected { transform: translateY(-30px) scale(1.05) !important; z-index: 100 !important; box-shadow: 0 0 30px var(--gold); }
+
+        /* 操作パネル（スクショのデザイン） */
+        #control-panel { display: flex; align-items: center; gap: 15px; margin: 40px 0; }
+        .nav-btn { background: #333; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 1.2rem; cursor: pointer; font-weight: bold; }
+        .draw-btn { background: var(--gold); color: #222; border: none; padding: 18px 60px; border-radius: 50px; font-size: 1.5rem; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+        .draw-btn:disabled { background: #888; cursor: not-allowed; opacity: 0.6; }
+
+        /* 仕切り線 */
+        .divider { width: 80%; height: 2px; background: rgba(255,255,255,0.1); margin: 20px 0; }
+
+        /* 自分の手札 */
+        #my-hand { height: 200px; width: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
+        .my-card { background: white; border: 1px solid #ccc; position: absolute; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+
+        /* 入室画面 */
+        #room-overlay { position: fixed; inset: 0; background: #0e3b12; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        input { padding: 15px; font-size: 1.5rem; border-radius: 30px; border: none; width: 200px; text-align: center; margin: 20px; }
+
+        /* 捨てるアニメーション */
+        .discard { animation: flyOut 0.8s forwards; z-index: 1000 !important; }
+        @keyframes flyOut { 100% { transform: translateY(-800px) rotate(360deg) scale(0); opacity: 0; } }
     </style>
 </head>
 <body>
-    <div id="room-select">
-        <h2 id="msg">ROOM IDを入力</h2>
-        <input type="text" id="room-id-input" placeholder="ID">
-        <button onclick="joinRoom()">入室</button>
+
+<div id="room-overlay">
+    <h1>ROYAL OLD MAID</h1>
+    <input type="text" id="room-input" placeholder="Room ID">
+    <button class="draw-btn" onclick="join()">入室</button>
+</div>
+
+<div id="game-screen">
+    <div id="status-bar">対戦相手を待っています...</div>
+    
+    <div id="opp-hand-area" class="hand-area"></div>
+
+    <div id="control-panel" style="display: none;">
+        <button class="nav-btn" onclick="move(-1)">◀ 左へ</button>
+        <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">このカードを引く</button>
+        <button class="nav-btn" onclick="move(1)">右へ ▶</button>
     </div>
-    <div id="status">Connecting...</div>
-    <div id="opponent-hand" class="hand-container"></div>
-    <div id="control-panel"></div>
-    <div id="my-hand" class="hand-container"></div>
-    <div id="result-overlay"><h1 id="res-txt"></h1><button onclick="location.reload()">もう一度</button></div>
 
-    <script>
-        // ★重要★ ここをご自身のURLに書き換えてください
-        const SERVER_URL = 'wss://old-maid-online.onrender.com';
+    <div class="divider"></div>
+
+    <div id="my-hand" class="hand-area"></div>
+</div>
+
+<script>
+    const socket = new WebSocket('wss://old-maid-online.onrender.com');
+    let myHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
+
+    socket.onmessage = (e) => {
+        const data = e.data;
+        if (data.startsWith("STATE|")) {
+            const [_, cards, count, turn] = data.split("|");
+            myHand = cards.split(",").filter(s=>s).map(Number);
+            oppCount = parseInt(count);
+            isTurn = (turn === "true");
+            document.getElementById('room-overlay').style.display = "none";
+            updateUI();
+        } else if (data.startsWith("WINNER:")) {
+            alert(data.split(":")[1]);
+            location.reload();
+        }
+    };
+
+    function join() {
+        const rid = document.getElementById('room-input').value;
+        if(rid) socket.send("JOIN_ROOM:" + rid);
+    }
+
+    function updateUI() {
+        const oppArea = document.getElementById('opp-hand-area');
+        const myArea = document.getElementById('my-hand');
+        const status = document.getElementById('status-bar');
+        const panel = document.getElementById('control-panel');
+
+        // 相手の手札描画
+        oppArea.innerHTML = "";
+        for (let i = 0; i < oppCount; i++) {
+            const wrap = document.createElement('div');
+            wrap.className = "card-wrapper card-back" + (isTurn && i === selectedIdx ? " selected" : "");
+            const angle = (i - (oppCount-1)/2) * 5;
+            const x = (i - (oppCount-1)/2) * 40;
+            wrap.style.transform = `translateX(${x}px) rotate(${angle}deg)`;
+            wrap.innerHTML = `<div class="cursor-arrow">▼</div>`;
+            wrap.onclick = () => { if(isTurn && !animating) { selectedIdx = i; updateUI(); } };
+            oppArea.appendChild(wrap);
+        }
+
+        // 自分の手札描画
+        myArea.innerHTML = "";
+        myHand.forEach((n, i) => {
+            const c = document.createElement('div');
+            c.className = "card-wrapper my-card";
+            c.id = "card-" + n;
+            const x = (i - (myHand.length-1)/2) * 45;
+            c.style.transform = `translateX(${x}px)`;
+            const suit = ['hearts','spades','diamonds','clubs'][Math.floor((n-1)/13)];
+            const val = (n === 53) ? "joker" : (n-1)%13+1;
+            c.innerHTML = `<img src="images/png/${n===53?'black_joker':val+'_of_'+suit}.png" style="width:100%; height:100%; border-radius:5px;">`;
+            myArea.appendChild(c);
+        });
+
+        status.innerText = isTurn ? "あなたの番です！" : "相手が引いています...";
+        status.style.color = isTurn ? "#ffd700" : "white";
+        panel.style.display = (isTurn && oppCount > 0) ? "flex" : "none";
         
-        let socket, myTurn = false, isAnimating = false, selectedIndex = 0, currentOppCount = 0;
-        let pendingRoom = null;
+        // ペアチェック（サーバーにDISCARD_DONEを送る必要がある場合）
+        checkPairs();
+    }
 
-        function connect() {
-            socket = new WebSocket(SERVER_URL);
-            socket.onopen = () => {
-                document.getElementById('status').innerText = "Connected";
-                if (pendingRoom) socket.send("JOIN_ROOM:" + pendingRoom);
-            };
-            socket.onmessage = (e) => {
-                const data = e.data;
-                if (data.startsWith("STATE|")) {
-                    document.getElementById('room-select').style.display = "none";
-                    const [_, handStr, oppCount, turn] = data.split("|");
-                    myTurn = (turn === "true"); currentOppCount = parseInt(oppCount);
-                    render(handStr.split(",").filter(s=>s).map(Number), currentOppCount);
-                } else if (data.startsWith("WINNER:")) {
-                    document.getElementById('result-overlay').style.display = "flex";
-                    document.getElementById('res-txt').innerText = data.split(":")[1];
-                }
-            };
-            socket.onclose = () => setTimeout(connect, 2000);
-        }
-        connect();
+    function move(dir) {
+        if(!isTurn || animating) return;
+        selectedIdx = (selectedIdx + dir + oppCount) % oppCount;
+        updateUI();
+    }
 
-        function joinRoom() {
-            const id = document.getElementById('room-id-input').value;
-            if (!id) return;
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send("JOIN_ROOM:" + id);
-                document.getElementById('room-select').style.display = "none";
-            } else {
-                pendingRoom = id;
-                document.getElementById('msg').innerText = "接続中...（少々お待ちください）";
-            }
-        }
+    function confirmDraw() {
+        if(!isTurn || animating || oppCount === 0) return;
+        animating = true;
+        document.getElementById('draw-confirm').disabled = true;
+        socket.send("DRAW:" + selectedIdx);
+    }
 
-        function render(cards, oppCount) {
-            const oppDiv = document.getElementById('opponent-hand'), myDiv = document.getElementById('my-hand');
-            oppDiv.innerHTML = ""; myDiv.innerHTML = "";
-            
-            // 相手
-            for (let i = 0; i < oppCount; i++) {
-                const el = document.createElement('div'); el.className = "card-wrapper card-back";
-                el.style.left = `calc(50% - 40px + ${(i - (oppCount-1)/2) * 30}px)`;
-                el.onclick = () => { if(myTurn && !isAnimating) { selectedIndex = i; draw(); } };
-                if (myTurn && i === selectedIndex) el.classList.add('selected-card');
-                oppDiv.appendChild(el);
-            }
-            // 操作
-            const ctrl = document.getElementById('control-panel');
-            ctrl.innerHTML = (myTurn && oppCount > 0) ? `<button onclick="moveCursor(-1)">◀</button><button onclick="draw()" style="width:120px">引く</button><button onclick="moveCursor(1)">▶</button>` : "";
+    function checkPairs() {
+        const counts = {};
+        myHand.forEach(n => { if(n<53) { const v=(n-1)%13+1; (counts[v]=counts[v]||[]).push(n); } });
+        const pairs = [];
+        Object.values(counts).forEach(arr => { while(arr.length >= 2) pairs.push(arr.pop(), arr.pop()); });
 
-            // 自分
-            cards.forEach((n, i) => {
-                const el = document.createElement('div'); el.className = "card-wrapper";
-                el.id = `c-${n}`;
-                el.style.left = `calc(50% - 40px + ${(i - (cards.length-1)/2) * 40}px)`;
-                el.innerHTML = `<img src="images/png/${n===53?'black_joker.png':((n-1)%13+1)+'_of_'+['hearts','spades','diamonds','clubs'][Math.floor((n-1)/13)]+'.png'}" style="width:100%">`;
-                myDiv.appendChild(el);
-            });
-
+        if (pairs.length > 0) {
+            animating = true;
             setTimeout(() => {
-                let map = {}; cards.forEach(n => { if(n<53){ let v=(n-1)%13+1; (map[v]=map[v]||[]).push(n); } });
-                let pairs = []; Object.values(map).forEach(g => { if(g.length >= 2) pairs.push(g.pop(), g.pop()); });
-                if (pairs.length > 0) {
-                    isAnimating = true;
-                    pairs.forEach(id => document.getElementById(`c-${id}`).classList.add('discard-animation'));
-                    setTimeout(() => { socket.send("DISCARD_DONE"); isAnimating = false; }, 1000);
-                } else if (cards.length === 0 || oppCount === 0) {
+                pairs.forEach(id => {
+                    const el = document.getElementById("card-" + id);
+                    if(el) el.classList.add('discard');
+                });
+                setTimeout(() => { 
                     socket.send("DISCARD_DONE");
-                }
+                    animating = false;
+                }, 800);
             }, 500);
+        } else if (myHand.length === 0 || oppCount === 0) {
+            // 枚数が0になった時も必ずサーバーへ報告して決着させる
+            socket.send("DISCARD_DONE");
         }
+    }
 
-        function moveCursor(d) { selectedIndex = (selectedIndex + d + currentOppCount) % currentOppCount; renderCurrent(); }
-        function draw() { if(myTurn && !isAnimating) { isAnimating = true; socket.send("DRAW:" + selectedIndex); } }
-        // 再描画用（カード枚数が変わらない時）
-        function renderCurrent() { 
-            document.querySelectorAll('#opponent-hand .card-wrapper').forEach((el, i) => {
-                el.classList.toggle('selected-card', i === selectedIndex);
-            });
-        }
-    </script>
+    // キーボード操作
+    window.onkeydown = (e) => {
+        if(e.key === "ArrowLeft") move(-1);
+        if(e.key === "ArrowRight") move(1);
+        if(e.key === "Enter") confirmDraw();
+    };
+</script>
 </body>
 </html>
