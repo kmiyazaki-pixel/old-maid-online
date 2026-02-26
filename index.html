@@ -1,15 +1,48 @@
-socket.onmessage = (event) => {
-    console.log("サーバーからのメッセージ:", event.data); // デバッグ用
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Old Maid</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+        #status { font-weight: bold; color: blue; }
+        .game-title { color: #2c3e50; }
+    </style>
+</head>
+<body>
 
-    if (event.data === "GAME_START:対戦開始！") {
-        // 画面の表示を書き換える
-        document.body.innerHTML = `
-            <h1>ババ抜きオンライン</h1>
-            <p style="color: green; font-weight: bold;">対戦が開始されました！</p>
-            <div id="game-board">
-                <p>カードを配っています...</p>
-            </div>
-        `;
-        // ここにカードを配る関数などを後で追加します
-    }
-};
+    <div id="main-display">
+        <h1 class="game-title">Web Old Maid</h1>
+        <p id="status">接続成功！対戦相手を待っています...</p>
+    </div>
+
+    <script>
+        // あなたのRenderのURLに合わせてください
+        const socket = new WebSocket('wss://old-maid-online.onrender.com');
+
+        socket.onopen = () => {
+            console.log("サーバーに接続しました");
+        };
+
+        socket.onmessage = (event) => {
+            console.log("サーバーからのメッセージ:", event.data);
+
+            if (event.data === "GAME_START:対戦開始！") {
+                // 2人揃った時に、ここが実行されます
+                document.getElementById('main-display').innerHTML = `
+                    <h1 class="game-title">ババ抜きオンライン</h1>
+                    <p style="color: green; font-weight: bold;">対戦が開始されました！</p>
+                    <div id="game-board">
+                        <p>カードを配っています...</p>
+                    </div>
+                `;
+            }
+        };
+
+        socket.onerror = (error) => {
+            document.getElementById('status').innerText = "エラーが発生しました";
+            console.error("WebSocket Error:", error);
+        };
+    </script>
+</body>
+</html>
