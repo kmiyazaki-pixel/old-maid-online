@@ -6,130 +6,182 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class OldMaidServer extends WebSocketServer {
+    // 部屋ごとの接続メンバーを管理
     private static Map<String, List<WebSocket>> rooms = new ConcurrentHashMap<>();
+    // 接続ごとの手札を管理
     private static Map<WebSocket, List<Integer>> hands = new ConcurrentHashMap<>();
+    // 接続がどの部屋に属しているか
     private static Map<WebSocket, String> connRoom = new ConcurrentHashMap<>();
+    // 部屋ごとのターン管理
     private static Map<String, Integer> roomTurns = new ConcurrentHashMap<>();
-    private static Map<String, Set<WebSocket>> rematchRequests = new ConcurrentHashMap<>();
 
     public OldMaidServer(int port) { super(new InetSocketAddress(port)); }
 
     @Override
-    public void onOpen(WebSocket conn, ClientHandshake handshake) {}
+    public void onOpen(WebSocket conn, ClientHandshake handshake) {
+        System.out.println("New Connection: " + conn.getRemoteSocketAddress());
+    }
 
     @Override
     public void onMessage(WebSocket conn, String message) {
-        if (message.startsWith("JOIN_ROOM:")) {
-            handleJoinRoom(conn, message.replace("JOIN_ROOM:", "").trim());
-        } else if (message.equals("REMATCH_REQUEST")) {
-            handleRematch(conn);
-        } else if (message.startsWith("DRAW:")) {
-            handleDraw(conn, Integer.parseInt(message.replace("DRAW:", "")));
-        } else if (message.equals("DISCARD_DONE")) {
-            handleDiscardDone(conn);
+        try {
+            if (message.startsWith("JOIN_ROOM:")) {
+                handleJoinRoom(conn, message.replace("JOIN_ROOM:", "").trim());
+            } else if (message.startsWith("DRAW:")) {
+                handleDraw(conn, Integer.parseInt(message.replace("DRAW:", "")));
+            } else if (message.equals("DISCARD_DONE")) {
+                handleDiscardDone(conn);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
     private void handleJoinRoom(WebSocket conn, String roomId) {
+        // 以前の部屋情報をクリア（二重入室防止）
+        leaveCurrentRoom(conn);
+
         rooms.putIfAbsent(roomId, new ArrayList<>());
-        List<WebSocket> m = rooms.get(roomId);
-        if (m.size() >= 2) return;
-        m.add(conn);
+        List<WebSocket> members = rooms.get(roomId);
+
+        if (members.size() >= 2) {
+            conn.send("ERROR:Room is Full");
+            return;
+        }
+
+        members.add(conn);
         connRoom.put(conn, roomId);
-        if (m.size() == 2) initGame(roomId);
-        else conn.send("WAITING:対戦相手を待っています...");
+        System.out.println("User joined " + roomId + ". Total: " + members.size());
+
+        // ★最重要：2人揃った瞬間に「必ず」ゲームを生成して全員に送る
+        if (members.size() == 2) {
+            startGame(roomId);
+        } else {
+            conn.send("WAITING:Waiting for opponent...");
+        }
     }
 
-    private void initGame(String roomId) {
+    private void startGame(String roomId) {
         List<WebSocket> m = rooms.get(roomId);
-        roomTurns.put(roomId, 0);
-        rematchRequests.remove(roomId);
+        if (m.size() < 2) return;
+
+        // デッキ作成と配布
         List<Integer> deck = new ArrayList<>();
         for (int i = 1; i <= 53; i++) deck.add(i);
         Collections.shuffle(deck);
-        hands.put(m.get(0), removePairs(new ArrayList<>(deck.subList(0, 27))));
-        hands.put(m.get(1), removePairs(new ArrayList<>(deck.subList(27, 53))));
-        sendState(roomId);
+
+        hands.put(m.get(0), new ArrayList<>(deck.subList(0, 27)));
+        hands.put(m.get(1), new ArrayList<>(deck.subList(27, 53)));
+        roomTurns.put(roomId, 0);
+
+        sendGameState(roomId);
     }
 
     private void handleDraw(WebSocket conn, int index) {
         String rid = connRoom.get(conn);
+        if (rid == null) return;
         List<WebSocket> m = rooms.get(rid);
         int turn = roomTurns.get(rid);
-        if (conn != m.get(turn)) return;
-        WebSocket owner = m.get((turn + 1) % 2);
-        if (index >= hands.get(owner).size()) return;
 
-        int card = hands.get(owner).remove(index);
-        hands.get(conn).add(card);
-        sendState(rid);
+        if (conn != m.get(turn)) return; // 自分のターンじゃなければ無視
+
+        WebSocket target = m.get((turn + 1) % 2);
+        List<Integer> targetHand = hands.get(target);
+
+        // ★引けない問題を根絶：インデックスの範囲外チェックを厳密に
+        if (index < 0 || index >= targetHand.size()) {
+            index = 0; // 安全策として先頭を引く
+        }
+
+        int pulledCard = targetHand.remove(index);
+        hands.get(conn).add(pulledCard);
+
+        sendGameState(rid);
     }
 
     private void handleDiscardDone(WebSocket conn) {
         String rid = connRoom.get(conn);
         if (rid == null) return;
+
+        // ペアを捨ててターン交代
         hands.put(conn, removePairs(hands.get(conn)));
         roomTurns.put(rid, (roomTurns.get(rid) + 1) % 2);
-        if (!checkWinner(rid)) sendState(rid);
+
+        // 勝利判定。決着がついていなければ次の状態を送信
+        if (!checkWinner(rid)) {
+            sendGameState(rid);
+        }
     }
 
     private boolean checkWinner(String rid) {
         List<WebSocket> m = rooms.get(rid);
         WebSocket p1 = m.get(0), p2 = m.get(1);
         int s1 = hands.get(p1).size(), s2 = hands.get(p2).size();
+
         if (s1 == 0 || s2 == 0) {
-            if (s1 == 0 && s2 == 0) { p1.send("WINNER:DRAW"); p2.send("WINNER:DRAW"); }
-            else if (s1 == 0) { p1.send("WINNER:YOU WIN!"); p2.send("WINNER:YOU LOSE..."); }
-            else { p2.send("WINNER:YOU WIN!"); p1.send("WINNER:YOU LOSE..."); }
+            if (s1 == 0 && s2 == 0) {
+                p1.send("WINNER:DRAW"); p2.send("WINNER:DRAW");
+            } else if (s1 == 0) {
+                p1.send("WINNER:YOU WIN!"); p2.send("WINNER:YOU LOSE...");
+            } else {
+                p2.send("WINNER:YOU WIN!"); p1.send("WINNER:YOU LOSE...");
+            }
             return true;
         }
         return false;
     }
 
-    private List<Integer> removePairs(List<Integer> hand) {
-        Map<Integer, List<Integer>> g = new HashMap<>();
-        List<Integer> r = new ArrayList<>();
-        for (int c : hand) {
-            if (c == 53) { r.add(c); continue; }
-            int v = (c - 1) % 13 + 1;
-            g.computeIfAbsent(v, k -> new ArrayList<>()).add(c);
-        }
-        for (List<Integer> cs : g.values()) if (cs.size() % 2 != 0) r.add(cs.get(0));
-        return r;
-    }
-
-    private void handleRematch(WebSocket conn) {
-        String rid = connRoom.get(conn);
-        rematchRequests.putIfAbsent(rid, Collections.newSetFromMap(new ConcurrentHashMap<>()));
-        rematchRequests.get(rid).add(conn);
-        if (rematchRequests.get(rid).size() == 2) initGame(rid);
-        else broadcastToRoom(rid, "REMATCH_STATUS:1/2");
-    }
-
-    private void sendState(String rid) {
+    private void sendGameState(String rid) {
         List<WebSocket> m = rooms.get(rid);
-        int t = roomTurns.get(rid);
+        int turnIdx = roomTurns.get(rid);
+
         for (int i = 0; i < 2; i++) {
-            String h = listToString(hands.get(m.get(i)));
-            int oc = hands.get(m.get((i + 1) % 2)).size();
-            m.get(i).send("STATE|" + h + "|" + oc + "|" + (i == t));
+            WebSocket player = m.get(i);
+            String myHandStr = String.join(",", hands.get(player).stream().map(String::valueOf).toArray(String[]::new));
+            int oppCardCount = hands.get(m.get((i + 1) % 2)).size();
+            boolean isMyTurn = (i == turnIdx);
+            
+            // STATE|自分の手札|相手の枚数|自分のターンか
+            player.send("STATE|" + myHandStr + "|" + oppCardCount + "|" + isMyTurn);
         }
     }
 
-    private void broadcastToRoom(String rid, String msg) { for (WebSocket ws : rooms.get(rid)) ws.send(msg); }
-    private String listToString(List<Integer> list) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < list.size(); i++) sb.append(list.get(i)).append(i == list.size() - 1 ? "" : ",");
-        return sb.toString();
+    private List<Integer> removePairs(List<Integer> hand) {
+        Map<Integer, Integer> counts = new HashMap<>();
+        for (int c : hand) {
+            if (c == 53) { counts.put(53, 1); continue; }
+            int v = (c - 1) % 13 + 1;
+            counts.put(v, counts.getOrDefault(v, 0) + 1);
+        }
+        List<Integer> result = new ArrayList<>();
+        for (int c : hand) {
+            if (c == 53) { result.add(53); continue; }
+            int v = (c - 1) % 13 + 1;
+            if (counts.get(v) % 2 != 0) {
+                result.add(c);
+                counts.put(v, 0); // 1枚だけ残してあとは無視
+            }
+        }
+        return result;
     }
-    @Override public void onClose(WebSocket c, int o, String r, boolean m) {
-        String rid = connRoom.get(c);
-        if (rid != null) broadcastToRoom(rid, "OPPONENT_LEFT");
+
+    private void leaveCurrentRoom(WebSocket conn) {
+        String rid = connRoom.get(conn);
+        if (rid != null && rooms.containsKey(rid)) {
+            rooms.get(rid).remove(conn);
+            if (rooms.get(rid).isEmpty()) rooms.remove(rid);
+        }
+        connRoom.remove(conn);
     }
-    @Override public void onError(WebSocket c, Exception e) {}
-    @Override public void onStart() {}
-    public static void main(String[] args) { 
-        String p = System.getenv("PORT");
-        new OldMaidServer(p != null ? Integer.parseInt(p) : 8080).start(); 
+
+    @Override public void onClose(WebSocket c, int code, String reason, boolean remote) { leaveCurrentRoom(c); }
+    @Override public void onError(WebSocket c, Exception e) { e.printStackTrace(); }
+    @Override public void onStart() { System.out.println("Server Started!"); }
+
+    public static void main(String[] args) {
+        int port = 8080;
+        String envPort = System.getenv("PORT");
+        if (envPort != null) port = Integer.parseInt(envPort);
+        new OldMaidServer(port).start();
     }
 }
