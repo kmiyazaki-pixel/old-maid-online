@@ -6,13 +6,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class OldMaidServer extends WebSocketServer {
-    // 部屋ごとの接続メンバーを管理
     private static Map<String, List<WebSocket>> rooms = new ConcurrentHashMap<>();
-    // 接続ごとの手札を管理
     private static Map<WebSocket, List<Integer>> hands = new ConcurrentHashMap<>();
-    // 接続がどの部屋に属しているか
     private static Map<WebSocket, String> connRoom = new ConcurrentHashMap<>();
-    // 部屋ごとのターン管理
     private static Map<String, Integer> roomTurns = new ConcurrentHashMap<>();
 
     public OldMaidServer(int port) { super(new InetSocketAddress(port)); }
@@ -38,9 +34,7 @@ public class OldMaidServer extends WebSocketServer {
     }
 
     private void handleJoinRoom(WebSocket conn, String roomId) {
-        // 以前の部屋情報をクリア（二重入室防止）
         leaveCurrentRoom(conn);
-
         rooms.putIfAbsent(roomId, new ArrayList<>());
         List<WebSocket> members = rooms.get(roomId);
 
@@ -51,9 +45,7 @@ public class OldMaidServer extends WebSocketServer {
 
         members.add(conn);
         connRoom.put(conn, roomId);
-        System.out.println("User joined " + roomId + ". Total: " + members.size());
-
-        // ★最重要：2人揃った瞬間に「必ず」ゲームを生成して全員に送る
+        
         if (members.size() == 2) {
             startGame(roomId);
         } else {
@@ -65,15 +57,18 @@ public class OldMaidServer extends WebSocketServer {
         List<WebSocket> m = rooms.get(roomId);
         if (m.size() < 2) return;
 
-        // デッキ作成と配布
         List<Integer> deck = new ArrayList<>();
         for (int i = 1; i <= 53; i++) deck.add(i);
         Collections.shuffle(deck);
 
         hands.put(m.get(0), new ArrayList<>(deck.subList(0, 27)));
         hands.put(m.get(1), new ArrayList<>(deck.subList(27, 53)));
+        
+        // 開始時もシャッフル
+        Collections.shuffle(hands.get(m.get(0)));
+        Collections.shuffle(hands.get(m.get(1)));
+        
         roomTurns.put(roomId, 0);
-
         sendGameState(roomId);
     }
 
@@ -83,23 +78,21 @@ public class OldMaidServer extends WebSocketServer {
         List<WebSocket> m = rooms.get(rid);
         int turn = roomTurns.get(rid);
 
-        if (conn != m.get(turn)) return; // 自分のターンじゃなければ無視
+        if (conn != m.get(turn)) return;
 
         WebSocket target = m.get((turn + 1) % 2);
         List<Integer> targetHand = hands.get(target);
 
-        // ★引けない問題を根絶：インデックスの範囲外チェックを厳密に
         if (index < 0 || index >= targetHand.size()) {
-            index = 0; // 安全策として先頭を引く
+            index = 0;
         }
 
         int pulledCard = targetHand.remove(index);
         hands.get(conn).add(pulledCard);
 
-        // ★追加：引いた側の手札をシャッフル（どこに入ったかわからなくする）
-    Collections.shuffle(hands.get(conn));
-    // ★追加：引かれた側の手札もシャッフル（位置を特定させない）
-    Collections.shuffle(targetHand);
+        // シャッフルして位置をわからなくする
+        Collections.shuffle(hands.get(conn));
+        Collections.shuffle(targetHand);
 
         sendGameState(rid);
     }
@@ -108,15 +101,13 @@ public class OldMaidServer extends WebSocketServer {
         String rid = connRoom.get(conn);
         if (rid == null) return;
 
-        // ペアを捨ててターン交代
         hands.put(conn, removePairs(hands.get(conn)));
         
-        // ★追加：捨てた後も念のためシャッフル
-  　　  Collections.shuffle(hands.get(conn));
+        // ペアを捨てた後もシャッフル
+        Collections.shuffle(hands.get(conn));
         
         roomTurns.put(rid, (roomTurns.get(rid) + 1) % 2);
 
-        // 勝利判定。決着がついていなければ次の状態を送信
         if (!checkWinner(rid)) {
             sendGameState(rid);
         }
@@ -149,8 +140,6 @@ public class OldMaidServer extends WebSocketServer {
             String myHandStr = String.join(",", hands.get(player).stream().map(String::valueOf).toArray(String[]::new));
             int oppCardCount = hands.get(m.get((i + 1) % 2)).size();
             boolean isMyTurn = (i == turnIdx);
-            
-            // STATE|自分の手札|相手の枚数|自分のターンか
             player.send("STATE|" + myHandStr + "|" + oppCardCount + "|" + isMyTurn);
         }
     }
@@ -168,7 +157,7 @@ public class OldMaidServer extends WebSocketServer {
             int v = (c - 1) % 13 + 1;
             if (counts.get(v) % 2 != 0) {
                 result.add(c);
-                counts.put(v, 0); // 1枚だけ残してあとは無視
+                counts.put(v, 0);
             }
         }
         return result;
