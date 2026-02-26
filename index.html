@@ -1,4 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Royal Old Maid</title>
+    <style>
+        :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; }
+        body { font-family: 'Hiragino Sans', sans-serif; background: #0e3b12; color: white; margin: 0; overflow: hidden; text-align: center; }
+        #game-screen { display: flex; flex-direction: column; align-items: center; height: 100vh; background: radial-gradient(circle, #1b5e20, #0a2b0e); }
+        #status-bar { font-size: 1.8rem; font-weight: bold; color: var(--gold); margin: 30px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        .hand-area { position: relative; height: 200px; width: 100%; display: flex; justify-content: center; align-items: flex-end; }
+        .card-wrapper { position: absolute; width: var(--card-w); height: var(--card-h); border-radius: 8px; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
+        .card-back { background: #c62828; border: 3px solid white; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px); }
+        .my-card { background: white; border: 1px solid #ccc; position: absolute; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .cursor-arrow { position: absolute; top: -50px; left: 50%; transform: translateX(-50%); color: var(--gold); font-size: 2.5rem; display: none; }
+        .selected { transform: translateY(-30px) scale(1.05) !important; z-index: 100 !important; box-shadow: 0 0 30px var(--gold); }
+        .selected .cursor-arrow { display: block; animation: bounce 0.4s infinite alternate; }
+        @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-10px); } }
+        #control-panel { display: flex; align-items: center; gap: 15px; margin: 40px 0; height: 60px; }
+        .nav-btn { background: #333; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 1.2rem; cursor: pointer; }
+        .draw-btn { background: var(--gold); color: #222; border: none; padding: 18px 60px; border-radius: 50px; font-size: 1.5rem; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+        .draw-btn:disabled { background: #666; opacity: 0.7; cursor: not-allowed; }
+        .divider { width: 80%; height: 2px; background: rgba(255,255,255,0.1); margin: 20px 0; }
+        #room-overlay { position: fixed; inset: 0; background: #0e3b12; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        input { padding: 15px; font-size: 1.5rem; border-radius: 30px; border: none; width: 200px; text-align: center; margin-bottom: 20px; }
+        .discard { animation: flyOut 0.8s forwards; z-index: 1000 !important; }
+        @keyframes flyOut { 100% { transform: translateY(-800px) rotate(360deg) scale(0); opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div id="room-overlay">
+    <h1>ROYAL OLD MAID</h1>
+    <input type="text" id="room-input" placeholder="Room ID">
+    <button class="draw-btn" onclick="join()">入室</button>
+</div>
+
+<div id="game-screen">
+    <div id="status-bar">対戦相手を待っています...</div>
+    <div id="opp-hand-area" class="hand-area"></div>
+    <div id="control-panel"></div>
+    <div class="divider"></div>
+    <div id="my-hand" class="hand-area"></div>
+</div>
+
 <script>
+    // URLはご自身のものに書き換えてください
     const socket = new WebSocket('wss://old-maid-online.onrender.com');
     let myHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
 
@@ -10,7 +56,7 @@
             oppCount = parseInt(count);
             isTurn = (turn === "true");
             
-            // 通信が届いても、演出中はUIを書き換えない（勝手に動くのを防ぐ）
+            // 演出中でなければ即描画。演出中なら、演出終了後にupdateUIが呼ばれる。
             if (!animating) {
                 document.getElementById('room-overlay').style.display = "none";
                 updateUI();
@@ -21,28 +67,76 @@
         }
     };
 
+    function join() {
+        const rid = document.getElementById('room-input').value;
+        if(rid && socket.readyState === 1) socket.send("JOIN_ROOM:" + rid);
+    }
+
     function updateUI() {
-        // ... (中略：描画処理はそのまま) ...
+        const oppArea = document.getElementById('opp-hand-area');
+        const myArea = document.getElementById('my-hand');
+        const status = document.getElementById('status-bar');
+        const panel = document.getElementById('control-panel');
+
+        // 相手の手札
+        oppArea.innerHTML = "";
+        for (let i = 0; i < oppCount; i++) {
+            const wrap = document.createElement('div');
+            wrap.className = "card-wrapper card-back" + (isTurn && i === selectedIdx ? " selected" : "");
+            const x = (i - (oppCount-1)/2) * 40;
+            wrap.style.transform = `translateX(${x}px)`;
+            wrap.innerHTML = `<div class="cursor-arrow">▼</div>`;
+            wrap.onclick = () => { if(isTurn && !animating) { selectedIdx = i; updateUI(); } };
+            oppArea.appendChild(wrap);
+        }
+
+        // 自分の手札
+        myArea.innerHTML = "";
+        myHand.forEach((n, i) => {
+            const c = document.createElement('div');
+            c.className = "card-wrapper my-card";
+            c.id = "card-" + n;
+            const x = (i - (myHand.length-1)/2) * 45;
+            c.style.transform = `translateX(${x}px)`;
+            const suit = ['hearts','spades','diamonds','clubs'][Math.floor((n-1)/13)];
+            const val = (n === 53) ? "joker" : (n-1)%13+1;
+            c.innerHTML = `<img src="images/png/${n===53?'black_joker':val+'_of_'+suit}.png" style="width:100%;height:100%;border-radius:5px;pointer-events:none;">`;
+            myArea.appendChild(c);
+        });
+
+        // ボタンとステータス
+        status.innerText = isTurn ? "あなたの番です！" : "相手が引いています...";
+        status.style.color = isTurn ? "#ffd700" : "white";
         
-        // ★重要：勝手に checkPairs() を呼ばないように変更
-        // updateUIは「描画するだけ」に徹し、ペアチェックは必要なタイミングで手動で呼ぶ
+        if (isTurn && oppCount > 0) {
+            panel.innerHTML = `
+                <button class="nav-btn" onclick="move(-1)">◀ 左へ</button>
+                <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">このカードを引く</button>
+                <button class="nav-btn" onclick="move(1)">右へ ▶</button>
+            `;
+        } else {
+            panel.innerHTML = "";
+        }
+    }
+
+    function move(dir) {
+        if(!isTurn || animating || oppCount === 0) return;
+        selectedIdx = (selectedIdx + dir + oppCount) % oppCount;
+        updateUI();
     }
 
     function confirmDraw() {
         if(!isTurn || animating || oppCount === 0) return;
         animating = true;
-        document.getElementById('draw-confirm').disabled = true;
-        
-        // 1. まずサーバーに引くことを伝える
+        const btn = document.getElementById('draw-confirm');
+        if(btn) btn.disabled = true;
+
         socket.send("DRAW:" + selectedIdx);
 
-        // 2. サーバーから返答が来るまで待機し、届いたら演出後にペアチェックへ
-        // (socket.onmessage 内で animating が管理される)
-        
-        // 演出時間を確保するため、少し遅らせてペアチェックを起動するように変更
+        // カードを引いてから「自分の手札を確認する」時間を1.5秒作る
         setTimeout(() => {
             checkPairs();
-        }, 1000); 
+        }, 1500);
     }
 
     function checkPairs() {
@@ -52,25 +146,29 @@
         Object.values(counts).forEach(arr => { while(arr.length >= 2) pairs.push(arr.pop(), arr.pop()); });
 
         if (pairs.length > 0) {
-            animating = true; // 捨てるアニメーション開始
-            setTimeout(() => {
-                pairs.forEach(id => {
-                    const el = document.getElementById("card-" + id);
-                    if(el) el.classList.add('discard');
-                });
-                // アニメーション完了後に初めてサーバーへ「終わったよ」と送る
-                setTimeout(() => { 
-                    socket.send("DISCARD_DONE");
-                    animating = false;
-                    updateUI();
-                }, 1000);
-            }, 500);
-        } else {
-            // ペアがない場合は、ここで初めて入力を受け付け可能にする
-            animating = false;
-            if (myHand.length === 0 || oppCount === 0) {
+            pairs.forEach(id => {
+                const el = document.getElementById("card-" + id);
+                if(el) el.classList.add('discard');
+            });
+            // 捨てるアニメーションを待ってからサーバーへ通知
+            setTimeout(() => { 
                 socket.send("DISCARD_DONE");
-            }
+                animating = false; 
+                updateUI();
+            }, 800);
+        } else {
+            // ペアがないなら即座にターン終了（枚数確認含む）
+            socket.send("DISCARD_DONE");
+            animating = false;
+            updateUI();
         }
     }
+
+    window.onkeydown = (e) => {
+        if(e.key === "ArrowLeft") move(-1);
+        if(e.key === "ArrowRight") move(1);
+        if(e.key === "Enter") confirmDraw();
+    };
 </script>
+</body>
+</html>
