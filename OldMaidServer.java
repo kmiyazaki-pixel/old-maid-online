@@ -21,7 +21,6 @@ public class OldMaidServer extends WebSocketServer {
             List<Integer> deck = new ArrayList<>();
             for (int i = 1; i <= 53; i++) deck.add(i);
             Collections.shuffle(deck);
-            // 演出のため、最初はペアを捨てずに配る
             hands.put(conns.get(0), new ArrayList<>(deck.subList(0, 27)));
             hands.put(conns.get(1), new ArrayList<>(deck.subList(27, 53)));
             sendState();
@@ -34,16 +33,21 @@ public class OldMaidServer extends WebSocketServer {
             int drawIndex = Integer.parseInt(message.replace("DRAW:", ""));
             WebSocket drawer = conns.get(turnIndex);
             WebSocket owner = conns.get((turnIndex + 1) % 2);
+
             if (conn == drawer && drawIndex < hands.get(owner).size()) {
+                // カードを移動
                 int pickedCard = hands.get(owner).remove(drawIndex);
                 hands.get(drawer).add(pickedCard);
-                // ターン交代前に状態を送る（クライアント側でアニメーションさせるため）
+                
+                // ここではまだターンを交代せず、ペアを捨てる演出のために現在の状態を送る
                 sendState();
-                turnIndex = (turnIndex + 1) % 2;
             }
         } else if (message.equals("DISCARD_DONE")) {
-            // クライアント側でアニメ演出が終わった報告を受け、サーバー側で正式に削除
+            // 捨て終わった報告を受けたら、サーバーでカードを消してターンを回す
             hands.put(conn, removePairs(hands.get(conn)));
+            
+            // 全員の手札をチェックして、全員が捨て終わった状態ならターンを交代
+            turnIndex = (turnIndex + 1) % 2;
             checkWinner();
             sendState();
         }
