@@ -7,7 +7,7 @@ import java.util.*;
 public class OldMaidServer extends WebSocketServer {
     private static List<WebSocket> conns = new ArrayList<>();
     private static Map<WebSocket, List<Integer>> hands = new HashMap<>();
-    private int turnIndex = 0; // 0ならプレイヤー1、1ならプレイヤー2の番
+    private int turnIndex = 0; 
 
     public OldMaidServer(int port) {
         super(new InetSocketAddress(port));
@@ -20,6 +20,7 @@ public class OldMaidServer extends WebSocketServer {
             return;
         }
         conns.add(conn);
+        System.out.println("New Player: " + conn.getRemoteSocketAddress());
 
         if (conns.size() == 2) {
             List<Integer> deck = new ArrayList<>();
@@ -30,11 +31,9 @@ public class OldMaidServer extends WebSocketServer {
             hands.put(conns.get(1), new ArrayList<>(deck.subList(27, 53)));
 
             sendState();
-            broadcast("GAME_START:対戦開始！");
         }
     }
 
-    // 全員に現在の状況（自分の手札と相手の枚数）を個別に送る
     private void sendState() {
         for (int i = 0; i < conns.size(); i++) {
             WebSocket ws = conns.get(i);
@@ -52,17 +51,13 @@ public class OldMaidServer extends WebSocketServer {
     public void onMessage(WebSocket conn, String message) {
         if (message.startsWith("DRAW:")) {
             int drawIndex = Integer.parseInt(message.replace("DRAW:", ""));
-            
             WebSocket drawer = conns.get(turnIndex);
             WebSocket owner = conns.get((turnIndex + 1) % 2);
 
-            if (conn == drawer) {
-                // カードを移動
+            if (conn == drawer && drawIndex < hands.get(owner).size()) {
                 int pickedCard = hands.get(owner).remove(drawIndex);
                 hands.get(drawer).add(pickedCard);
-
-                // ターン交代
-                turnIndex = (turnIndex + 1) % 2;
+                turnIndex = (turnIndex + 1) % 2; // ターン交代
                 sendState();
             }
         }
@@ -78,10 +73,6 @@ public class OldMaidServer extends WebSocketServer {
     public void onError(WebSocket conn, Exception ex) { ex.printStackTrace(); }
     @Override
     public void onStart() { System.out.println("Server Started"); }
-
-    public void broadcast(String msg) {
-        for (WebSocket sock : conns) sock.send(msg);
-    }
 
     private String listToString(List<Integer> list) {
         StringBuilder sb = new StringBuilder();
