@@ -7,7 +7,7 @@ import java.util.*;
 public class OldMaidServer extends WebSocketServer {
     private static List<WebSocket> conns = new ArrayList<>();
     private static Map<WebSocket, List<Integer>> hands = new HashMap<>();
-    private int turnIndex = 0; 
+    private int turnIndex = 0;
 
     public OldMaidServer(int port) {
         super(new InetSocketAddress(port));
@@ -15,19 +15,15 @@ public class OldMaidServer extends WebSocketServer {
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
-        if (conns.size() >= 2) {
-            conn.close();
-            return;
-        }
+        if (conns.size() >= 2) { conn.close(); return; }
         conns.add(conn);
         if (conns.size() == 2) {
             List<Integer> deck = new ArrayList<>();
             for (int i = 1; i <= 53; i++) deck.add(i);
             Collections.shuffle(deck);
-
-            hands.put(conns.get(0), removePairs(new ArrayList<>(deck.subList(0, 27))));
-            hands.put(conns.get(1), removePairs(new ArrayList<>(deck.subList(27, 53))));
-
+            // 演出のため、最初はペアを捨てずに配る
+            hands.put(conns.get(0), new ArrayList<>(deck.subList(0, 27)));
+            hands.put(conns.get(1), new ArrayList<>(deck.subList(27, 53)));
             sendState();
         }
     }
@@ -38,29 +34,18 @@ public class OldMaidServer extends WebSocketServer {
             int drawIndex = Integer.parseInt(message.replace("DRAW:", ""));
             WebSocket drawer = conns.get(turnIndex);
             WebSocket owner = conns.get((turnIndex + 1) % 2);
-
             if (conn == drawer && drawIndex < hands.get(owner).size()) {
                 int pickedCard = hands.get(owner).remove(drawIndex);
                 hands.get(drawer).add(pickedCard);
-                hands.put(drawer, removePairs(hands.get(drawer)));
-                hands.put(owner, removePairs(hands.get(owner)));
-
-                // 勝利判定
-                checkWinner();
-
-                turnIndex = (turnIndex + 1) % 2;
+                // ターン交代前に状態を送る（クライアント側でアニメーションさせるため）
                 sendState();
+                turnIndex = (turnIndex + 1) % 2;
             }
-        }
-    }
-
-    private void checkWinner() {
-        for (WebSocket ws : conns) {
-            if (hands.get(ws).isEmpty()) {
-                ws.send("WINNER:YOU WIN!");
-                WebSocket loser = conns.get((conns.indexOf(ws) + 1) % 2);
-                loser.send("WINNER:YOU LOSE...");
-            }
+        } else if (message.equals("DISCARD_DONE")) {
+            // クライアント側でアニメ演出が終わった報告を受け、サーバー側で正式に削除
+            hands.put(conn, removePairs(hands.get(conn)));
+            checkWinner();
+            sendState();
         }
     }
 
@@ -78,30 +63,37 @@ public class OldMaidServer extends WebSocketServer {
         return result;
     }
 
-    private void sendState() {
-        for (int i = 0; i < conns.size(); i++) {
-            WebSocket ws = conns.get(i);
-            WebSocket opponent = conns.get((i + 1) % 2);
-            String myHand = listToString(hands.get(ws));
-            int opponentCount = hands.get(opponent).size();
-            boolean isMyTurn = (i == turnIndex);
-            ws.send("STATE|" + myHand + "|" + opponentCount + "|" + isMyTurn);
+    private void checkWinner() {
+        for (WebSocket ws : conns) {
+            if (hands.get(ws).isEmpty()) {
+                ws.send("WINNER:YOU WIN!");
+                conns.get((conns.indexOf(ws) + 1) % 2).send("WINNER:YOU LOSE...");
+            }
         }
     }
 
-    @Override
-    public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-        conns.remove(conn);
-        hands.remove(conn);
+    private void sendState() {
+        for (int i = 0; i < conns.size(); i++) {
+            WebSocket ws = conns.get(i);
+            String myHand = listToString(hands.get(ws));
+            int oppCount = hands.get(conns.get((i + 1) % 2)).size();
+            ws.send("STATE|" + myHand + "|" + oppCount + "|" + (i == turnIndex));
+        }
     }
-
-    @Override
-    public void onError(WebSocket conn, Exception ex) { ex.printStackTrace(); }
-    @Override
-    public void onStart() { System.out.println("Server Started"); }
 
     private String listToString(List<Integer> list) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < list.size(); i++) {
             sb.append(list.get(i)).append(i == list.size() - 1 ? "" : ",");
         }
+        return sb.toString();
+    }
+
+    @Override public void onClose(WebSocket c, int o, String r, boolean m) { conns.remove(c); hands.remove(c); }
+    @Override public void onError(WebSocket c, Exception e) { e.printStackTrace(); }
+    @Override public void onStart() { System.out.println("Server Started"); }
+    public static void main(String[] args) {
+        String p = System.getenv("PORT");
+        new OldMaidServer(p != null ? Integer.parseInt(p) : 8080).start();
+    }
+}
