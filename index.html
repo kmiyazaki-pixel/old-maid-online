@@ -1,57 +1,15 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <title>Webババ抜きオンライン</title>
-    <style>
-        body { background-color: #1e783c; color: white; font-family: sans-serif; text-align: center; }
-        #card-area { display: flex; justify-content: center; gap: 10px; margin-top: 50px; flex-wrap: wrap; }
-        .card { width: 70px; height: 100px; background: white; color: black; border-radius: 8px; 
-                display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 2px solid #000; }
-        .red { color: red; }
-        #status { font-size: 20px; margin-bottom: 20px; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <h1>Web Old Maid</h1>
-    <div id="status">サーバーに接続中...</div>
-    <div id="card-area"></div>
+socket.onmessage = (event) => {
+    console.log("サーバーからのメッセージ:", event.data); // デバッグ用
 
-    <script>
-        const cardArea = document.getElementById('card-area');
-        const statusLabel = document.getElementById('status');
-        
-        // Renderのサーバーに接続（Java版サーバーはそのまま使えます）
-        const socket = new WebSocket('wss://old-maid-online.onrender.com');
-
-        socket.onopen = () => { statusLabel.innerText = "接続成功！対戦相手を待っています..."; };
-
-        socket.onmessage = (event) => {
-            const msg = event.data;
-            if (msg.startsWith("CARD_ADD:")) {
-                addCard(msg.substring(9));
-            } else if (msg === "YOUR_TURN") {
-                statusLabel.innerText = "あなたの番です！カードをクリック！";
-            } else if (msg.startsWith("INFO:")) {
-                statusLabel.innerText = msg.substring(5);
-            }
-        };
-
-        function addCard(code) {
-            const card = document.createElement('div');
-            card.className = 'card';
-            if (code.startsWith('H') || code.startsWith('D')) card.classList.add('red');
-            
-            // 記号の変換
-            let display = code.replace("S","♠").replace("H","♥").replace("D","♦").replace("C","♣").replace("J0","JKR");
-            card.innerText = display;
-            
-            card.onclick = () => {
-                socket.send("DRAW_REQUEST:0");
-                card.remove(); // 仮の演出
-            };
-            cardArea.appendChild(card);
-        }
-    </script>
-</body>
-</html>
+    if (event.data === "GAME_START:対戦開始！") {
+        // 画面の表示を書き換える
+        document.body.innerHTML = `
+            <h1>ババ抜きオンライン</h1>
+            <p style="color: green; font-weight: bold;">対戦が開始されました！</p>
+            <div id="game-board">
+                <p>カードを配っています...</p>
+            </div>
+        `;
+        // ここにカードを配る関数などを後で追加します
+    }
+};
