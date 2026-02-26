@@ -1,12 +1,12 @@
-FROM maven:3.8.8-eclipse-temurin-17 AS build
+FROM maven:3.8.8-eclipse-temurin-17
 WORKDIR /app
 COPY . .
-RUN mvn clean package -DskipTests
 
-FROM eclipse-temurin:17-jre
-WORKDIR /app
-# ビルドしたapp.jarをそのままコピー
-COPY --from=build /app/target/app.jar app.jar
+# 直接コンパイルして、クラスファイルとライブラリを同じ場所に置く
+RUN mvn dependency:copy-dependencies
+RUN javac -cp "target/dependency/*" OldMaidServer.java
+
 EXPOSE 8080
-# jarを直接叩くのではなく、中身を全部指定して確実にOldMaidServerを探させます
-ENTRYPOINT ["java", "-cp", "app.jar", "OldMaidServer"]
+
+# 「ここにファイルがあるから動かせ！」と直接指定
+CMD ["java", "-cp", ".:target/dependency/*", "OldMaidServer"]
