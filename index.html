@@ -2,39 +2,36 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Web Old Maid - Elegant Motion</title>
+    <title>Web Old Maid - Elegant Fixed</title>
     <style>
         body { 
             font-family: 'Helvetica Neue', Arial, sans-serif; 
-            text-align: center; background-color: #1b5e20; color: white; margin: 0; overflow: hidden; 
+            text-align: center; background-color: #1b5e20; color: white; margin: 0; overflow-x: hidden; 
         }
         #status { font-size: 1.3em; padding: 15px; background: rgba(0,0,0,0.6); min-height: 1.5em; }
-        #opponent-hand, #my-hand { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 20px; min-height: 120px; transition: 0.5s; }
+        #opponent-hand, #my-hand { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 20px; min-height: 120px; }
         
-        /* 自分のカード */
         .card-wrapper { background: white; border-radius: 8px; padding: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: 0.3s; position: relative; }
         .card-img { width: 70px; display: block; border-radius: 4px; }
 
-        /* 裏面デザイン */
         .card-back {
             width: 70px; height: 105px; background-color: #b71c1c; border: 3px solid white; border-radius: 8px;
             background-image: repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(255,255,255,.1) 7px, rgba(255,255,255,.1) 14px);
-            cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: 0.2s;
         }
+        .card-back:hover { transform: translateY(10px); }
 
-        /* 優雅な配る演出 */
         .deal-in { animation: deal-in-anim 0.8s cubic-bezier(0.2, 1, 0.3, 1) backwards; }
         @keyframes deal-in-anim { from { transform: translateY(600px) rotate(30deg); opacity: 0; } to { transform: translateY(0) rotate(0); opacity: 1; } }
 
-        /* 優雅に捨てる演出 */
-        .discard-animation { animation: fly-out 1.5s cubic-bezier(0.5, -0.5, 0.3, 1.5) forwards; z-index: 1000; }
+        .discard-animation { animation: fly-out 1.2s cubic-bezier(0.5, -0.5, 0.3, 1.5) forwards; z-index: 1000; }
         @keyframes fly-out {
             0% { transform: translateY(0) scale(1); }
-            40% { transform: translateY(-40px) scale(1.2) rotate(-5deg); opacity: 1; }
-            100% { transform: translateY(-1200px) rotate(60deg) scale(0.3); opacity: 0; }
+            30% { transform: translateY(-30px) scale(1.1); opacity: 1; }
+            100% { transform: translateY(-1000px) rotate(60deg) scale(0.3); opacity: 0; }
         }
 
-        #result-overlay { display: none; position: fixed; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; font-size: 5em; justify-content: center; align-items: center; }
+        #result-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; font-size: 5em; justify-content: center; align-items: center; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -46,14 +43,12 @@
 
     <script>
         const socket = new WebSocket('wss://old-maid-online.onrender.com');
-        let canDraw = false;
         let isAnimating = false;
 
         socket.onmessage = (event) => {
             const data = event.data;
             if (data.startsWith("WINNER:")) { showResult(data.split(":")[1]); return; }
             if (data.startsWith("STATE|")) {
-                if (isAnimating) return; // アニメーション中は画面更新をブロック
                 const [_, myCardsStr, oppCount, isTurn] = data.split("|");
                 const myCards = myCardsStr ? myCardsStr.split(",").filter(s => s).map(Number) : [];
                 updateUI(myCards, parseInt(oppCount), isTurn === "true");
@@ -69,7 +64,11 @@
             for (let i = 0; i < oppCount; i++) {
                 const cb = document.createElement('div');
                 cb.className = "card-back";
-                cb.onclick = () => { if(isTurn && !isAnimating) { socket.send("DRAW:" + i); } };
+                cb.onclick = () => { 
+                    if(isTurn && !isAnimating) { 
+                        socket.send("DRAW:" + i);
+                    } 
+                };
                 oppDiv.appendChild(cb);
             }
 
@@ -87,9 +86,7 @@
                 myDiv.appendChild(wrap);
             });
 
-            status.innerText = "カードを確認中...";
-            
-            // ペアチェック演出
+            // ペアチェック
             setTimeout(() => {
                 const valMap = {};
                 myCards.forEach(n => {
@@ -99,28 +96,31 @@
                     valMap[v].push(n);
                 });
 
-                let hasPair = false;
+                let pairsFound = [];
                 Object.values(valMap).forEach(group => {
-                    if (group.length >= 2) {
-                        hasPair = true;
-                        isAnimating = true;
-                        const p1 = group.pop(); const p2 = group.pop();
-                        document.getElementById(`card-${p1}`).classList.add('discard-animation');
-                        document.getElementById(`card-${p2}`).classList.add('discard-animation');
+                    while (group.length >= 2) {
+                        pairsFound.push(group.pop(), group.pop());
                     }
                 });
 
-                if (hasPair) {
+                if (pairsFound.length > 0) {
+                    isAnimating = true;
                     status.innerText = "ペアを捨てています...";
+                    pairsFound.forEach(cardId => {
+                        const el = document.getElementById(`card-${cardId}`);
+                        if(el) el.classList.add('discard-animation');
+                    });
+
                     setTimeout(() => {
                         isAnimating = false;
-                        socket.send("DISCARD_DONE"); // 捨て終わったことをサーバーに通知
-                    }, 1600);
+                        socket.send("DISCARD_DONE");
+                    }, 1300);
                 } else {
+                    isAnimating = false;
                     status.innerText = isTurn ? "あなたの番です！" : "相手のターンです";
                     status.style.color = isTurn ? "#ffeb3b" : "white";
                 }
-            }, 2000); // 配り終わって2秒待機
+            }, 1000); // 演出の待ち時間を少し短縮してテンポを改善
         }
 
         function showResult(msg) {
