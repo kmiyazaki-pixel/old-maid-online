@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Royal Old Maid - Grand Finale</title>
+    <title>Royal Old Maid - Professional Edition</title>
     <style>
         :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #071a08; color: white; margin: 0; overflow: hidden; text-align: center; }
@@ -61,7 +61,6 @@
 
         .divider { width: 85%; height: 1px; background: rgba(255,255,255,0.1); margin: 20px 0; }
         .overlay { position: fixed; inset: 0; background: #071a08; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        input { padding: 15px; font-size: 1.5rem; border-radius: 10px; border: 1px solid var(--gold); background: #111; color: white; text-align: center; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -76,13 +75,13 @@
 
 <div id="online-overlay" class="overlay" style="display: none;">
     <h1 style="color:var(--gold);">ONLINE MATCH</h1>
-    <input type="text" id="room-input" placeholder="Room ID">
+    <input type="text" id="room-input" placeholder="Room ID" style="padding: 15px; font-size: 1.5rem; border-radius: 10px; border: 1px solid var(--gold); background: #111; color: white; text-align: center; margin-bottom: 20px;">
     <button class="draw-btn" onclick="joinOnline()">ENTER ROOM</button>
     <button style="background:none; border:none; color:#aaa; cursor:pointer;" onclick="location.reload()">戻る</button>
 </div>
 
 <div id="game-screen">
-    <div id="status-bar">GAME START</div>
+    <div id="status-bar">READY...</div>
     <div id="opp-hand-area" class="hand-area"></div>
     <div id="control-panel"></div>
     <div class="divider"></div>
@@ -101,6 +100,7 @@
         document.getElementById('online-overlay').style.display = "flex";
     }
 
+    // --- CPU対戦初期化：最初からペアを捨てた状態で始める ---
     function initCPU() {
         isCPUMode = true;
         document.getElementById('mode-overlay').style.display = "none";
@@ -110,12 +110,31 @@
         let deck = Array.from({length: 53}, (_, i) => i + 1);
         deck = deck.sort(() => Math.random() - 0.5);
 
-        myHand = deck.slice(0, 27);
-        oppHand = deck.slice(27, 53);
-        isTurn = true;
+        // 配布
+        let pHand = deck.slice(0, 27);
+        let cHand = deck.slice(27, 53);
+
+        // ★初期ペア削除（開始前にごちゃごちゃさせない）
+        myHand = removePairsDirectly(pHand);
+        oppHand = removePairsDirectly(cHand);
         
+        isTurn = true;
+        selectedIdx = 0;
         updateUI();
-        setTimeout(checkPairs, 1000);
+        document.getElementById('status-bar').innerText = "あなたの番です！";
+    }
+
+    // ペアを即座に消す補助関数
+    function removePairsDirectly(hand) {
+        let counts = {};
+        hand.forEach(n => { if(n<53) { let v=(n-1)%13+1; counts[v]=(counts[v]||0)+1; } });
+        return hand.filter(n => {
+            if(n === 53) return true;
+            let v=(n-1)%13+1;
+            if(counts[v] % 2 === 0) return false; // 2枚, 4枚なら全部消す
+            counts[v] = 0; // 奇数の場合は1枚だけ残す処理
+            return true;
+        });
     }
 
     function joinOnline() {
@@ -157,6 +176,9 @@
         const myArea = document.getElementById('my-hand');
         const count = isCPUMode ? oppHand.length : oppCount;
         
+        // インデックス安全策
+        if (selectedIdx >= count) selectedIdx = Math.max(0, count - 1);
+
         // 相手手札
         while (oppArea.children.length < count) { oppArea.appendChild(document.createElement('div')); }
         while (oppArea.children.length > count) { oppArea.removeChild(oppArea.lastChild); }
@@ -191,30 +213,29 @@
 
         const status = document.getElementById('status-bar');
         const panel = document.getElementById('control-panel');
-        status.innerText = isTurn ? "あなたの番です" : (isCPUMode ? "CPUの番です..." : "相手の番です...");
+        status.innerText = isTurn ? "あなたの番です！" : (isCPUMode ? "相手の番です..." : "対戦相手の番です...");
         status.style.color = isTurn ? "var(--gold)" : "#aaa";
         
         if (isTurn && count > 0) {
-            panel.innerHTML = `<button class="nav-btn" onclick="move(-1)">◀ 左</button><button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">引く</button><button class="nav-btn" onclick="move(1)">右 ▶</button>`;
+            panel.innerHTML = `<button class="nav-btn" onclick="move(-1)">◀ 左</button><button id="draw-btn" class="draw-btn" onclick="confirmDraw()">カードを引く</button><button class="nav-btn" onclick="move(1)">右 ▶</button>`;
         } else { panel.innerHTML = ""; }
     }
 
     function confirmDraw() {
         if(!isTurn || animating) return;
-        const targetCount = isCPUMode ? oppHand.length : oppCount;
-        if(targetCount === 0) return;
+        const count = isCPUMode ? oppHand.length : oppCount;
+        if(count === 0) return;
 
         animating = true;
         if(isCPUMode) {
+            // CPUから1枚引く
             const pulled = oppHand.splice(selectedIdx, 1)[0];
             myHand.push(pulled);
-            selectedIdx = 0; // 選択リセット
-            myHand.sort(() => Math.random() - 0.5);
-            oppHand.sort(() => Math.random() - 0.5);
-            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1000); }, 500);
+            // シャッフル演出のため少し待つ
+            setTimeout(() => { updateUI(); setTimeout(checkPairs, 800); }, 400);
         } else {
             socket.send("DRAW:" + selectedIdx);
-            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1200); }, 500);
+            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1000); }, 500);
         }
     }
 
@@ -225,65 +246,60 @@
         Object.values(counts).forEach(arr => { while(arr.length >= 2) pairs.push(arr.pop(), arr.pop()); });
 
         if (pairs.length > 0) {
-            animating = true;
+            // 捨てるアニメーション
             pairs.forEach(id => { const el = document.getElementById("card-" + id); if(el) el.classList.add('discard-target'); });
             setTimeout(() => {
                 pairs.forEach(id => { const el = document.getElementById("card-" + id); if(el) el.classList.add('discard-fly'); });
                 setTimeout(() => {
                     myHand = myHand.filter(n => !pairs.includes(n));
                     if(isCPUMode) {
-                        myHand.sort(() => Math.random() - 0.5);
                         isTurn = false;
-                        animating = false; // ★ここでロック解除
+                        animating = false;
                         if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); }
                     } else {
                         socket.send("DISCARD_DONE");
                         animating = false; updateUI();
                     }
-                }, 900);
-            }, 600);
+                }, 800);
+            }, 500);
         } else {
             if(isCPUMode) { 
                 isTurn = false; 
-                animating = false; // ★ここでロック解除
+                animating = false;
                 if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); } 
+            } else {
+                socket.send("DISCARD_DONE");
+                animating = false; updateUI();
             }
-            else { socket.send("DISCARD_DONE"); animating = false; updateUI(); }
         }
     }
 
     function cpuTurn() {
         if (checkGameOver() || animating) return;
-        animating = true; // CPU動作中もロック
+        animating = true;
         
         setTimeout(() => {
+            // CPUがプレイヤーからランダムに引く
             const targetIdx = Math.floor(Math.random() * myHand.length);
             const pulled = myHand.splice(targetIdx, 1)[0];
             oppHand.push(pulled);
             
-            // CPUのペア捨て
-            const counts = {};
-            oppHand.forEach(n => { if(n<53) { const v=(n-1)%13+1; (counts[v]=counts[v]||[]).push(n); } });
-            Object.values(counts).forEach(arr => {
-                while(arr.length >= 2) {
-                    const a = arr.pop(), b = arr.pop();
-                    oppHand = oppHand.filter(n => n !== a && n !== b);
-                }
-            });
-
-            myHand.sort(() => Math.random() - 0.5);
-            oppHand.sort(() => Math.random() - 0.5);
+            // CPU内部のペア捨て
+            oppHand = removePairsDirectly(oppHand);
+            
+            // 手札の並びをシャッフル
+            myHand = myHand.sort(() => Math.random() - 0.5);
+            oppHand = oppHand.sort(() => Math.random() - 0.5);
 
             setTimeout(() => {
                 isTurn = true;
-                animating = false; // ★CPU終了時にロック解除
+                animating = false;
                 if(!checkGameOver()) { updateUI(); }
-            }, 800);
+            }, 600);
         }, 1000);
     }
 
     function checkGameOver() {
-        const count = isCPUMode ? oppHand.length : oppCount;
         if (myHand.length === 0 || (isCPUMode && oppHand.length === 0)) {
             let msg = (myHand.length === 0) ? "あなたの勝ち！" : "あなたの負け...";
             if (isCPUMode && myHand.length === 0 && oppHand.length === 0) msg = "引き分け！";
