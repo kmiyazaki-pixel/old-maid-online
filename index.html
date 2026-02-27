@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Royal Old Maid - Professional Edition</title>
+    <title>Royal Old Maid - Masterpiece</title>
     <style>
         :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #071a08; color: white; margin: 0; overflow: hidden; text-align: center; }
@@ -43,7 +43,8 @@
         .selected .cursor-arrow { display: block; animation: bounce 0.6s infinite alternate; }
         @keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-15px); } }
 
-        .discard-target { z-index: 1000 !important; transform: scale(1.2) translateY(-20px) !important; filter: brightness(1.5); }
+        /* 捨てる演出のスタイル */
+        .discard-target { z-index: 1000 !important; transform: scale(1.2) translateY(-20px) !important; filter: brightness(1.5); border: 2px solid var(--gold) !important; }
         .discard-fly { animation: discardAnim 0.8s ease-in forwards; pointer-events: none; }
         @keyframes discardAnim {
             0% { transform: scale(1.2) translateY(-20px) rotate(0); opacity: 1; }
@@ -100,7 +101,7 @@
         document.getElementById('online-overlay').style.display = "flex";
     }
 
-    // --- CPU対戦初期化：最初からペアを捨てた状態で始める ---
+    // --- CPU対戦初期化：配った直後に「捨てる演出」を挟む ---
     function initCPU() {
         isCPUMode = true;
         document.getElementById('mode-overlay').style.display = "none";
@@ -110,31 +111,18 @@
         let deck = Array.from({length: 53}, (_, i) => i + 1);
         deck = deck.sort(() => Math.random() - 0.5);
 
-        // 配布
-        let pHand = deck.slice(0, 27);
-        let cHand = deck.slice(27, 53);
-
-        // ★初期ペア削除（開始前にごちゃごちゃさせない）
-        myHand = removePairsDirectly(pHand);
-        oppHand = removePairsDirectly(cHand);
+        // 全カードを一度持たせる
+        myHand = deck.slice(0, 27);
+        oppHand = deck.slice(27, 53);
         
-        isTurn = true;
-        selectedIdx = 0;
+        animating = true;
         updateUI();
-        document.getElementById('status-bar').innerText = "あなたの番です！";
-    }
+        document.getElementById('status-bar').innerText = "手札を整理中...";
 
-    // ペアを即座に消す補助関数
-    function removePairsDirectly(hand) {
-        let counts = {};
-        hand.forEach(n => { if(n<53) { let v=(n-1)%13+1; counts[v]=(counts[v]||0)+1; } });
-        return hand.filter(n => {
-            if(n === 53) return true;
-            let v=(n-1)%13+1;
-            if(counts[v] % 2 === 0) return false; // 2枚, 4枚なら全部消す
-            counts[v] = 0; // 奇数の場合は1枚だけ残す処理
-            return true;
-        });
+        // 1秒待ってから、一斉に捨てる演出を開始
+        setTimeout(() => {
+            checkPairs(); // ここで既存のアニメーションロジックが走る
+        }, 1000);
     }
 
     function joinOnline() {
@@ -150,7 +138,12 @@
                 oppCount = parseInt(count);
                 isTurn = (turn === "true");
                 document.getElementById('online-overlay').style.display = "none";
-                if (isFirstLoad) { isFirstLoad = false; updateUI(); setTimeout(checkPairs, 1000); }
+                if (isFirstLoad) { 
+                    isFirstLoad = false; 
+                    animating = true;
+                    updateUI(); 
+                    setTimeout(checkPairs, 1000); 
+                }
                 else if (!animating) { updateUI(); }
             } else if (data.startsWith("WINNER:")) {
                 const msg = data.split(":")[1];
@@ -171,12 +164,10 @@
     }
 
     function updateUI() {
-        if (animating) return;
         const oppArea = document.getElementById('opp-hand-area');
         const myArea = document.getElementById('my-hand');
         const count = isCPUMode ? oppHand.length : oppCount;
         
-        // インデックス安全策
         if (selectedIdx >= count) selectedIdx = Math.max(0, count - 1);
 
         // 相手手札
@@ -197,7 +188,9 @@
 
         // 自分手札
         const existingIds = myHand.map(n => `card-${n}`);
-        Array.from(myArea.children).forEach(el => { if (!existingIds.includes(el.id) && !el.classList.contains('discard-fly')) myArea.removeChild(el); });
+        Array.from(myArea.children).forEach(el => { 
+            if (!existingIds.includes(el.id) && !el.classList.contains('discard-fly')) myArea.removeChild(el); 
+        });
         myHand.forEach((n, i) => {
             let el = document.getElementById(`card-${n}`);
             if (!el) {
@@ -207,16 +200,22 @@
             }
             const x = (i - (myHand.length-1)/2) * 45;
             const rot = (i - (myHand.length-1)/2) * 1;
-            el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
-            el.style.zIndex = i;
+            // 捨てるアニメーション中のカードは位置を固定しない
+            if(!el.classList.contains('discard-fly')) {
+                el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
+                el.style.zIndex = i;
+            }
         });
 
         const status = document.getElementById('status-bar');
         const panel = document.getElementById('control-panel');
-        status.innerText = isTurn ? "あなたの番です！" : (isCPUMode ? "相手の番です..." : "対戦相手の番です...");
+        if (animating && status.innerText === "READY...") status.innerText = "整理中...";
+        else if (!animating) {
+            status.innerText = isTurn ? "あなたの番です！" : (isCPUMode ? "相手の番です..." : "対戦相手の番です...");
+        }
         status.style.color = isTurn ? "var(--gold)" : "#aaa";
         
-        if (isTurn && count > 0) {
+        if (isTurn && count > 0 && !animating) {
             panel.innerHTML = `<button class="nav-btn" onclick="move(-1)">◀ 左</button><button id="draw-btn" class="draw-btn" onclick="confirmDraw()">カードを引く</button><button class="nav-btn" onclick="move(1)">右 ▶</button>`;
         } else { panel.innerHTML = ""; }
     }
@@ -228,10 +227,8 @@
 
         animating = true;
         if(isCPUMode) {
-            // CPUから1枚引く
             const pulled = oppHand.splice(selectedIdx, 1)[0];
             myHand.push(pulled);
-            // シャッフル演出のため少し待つ
             setTimeout(() => { updateUI(); setTimeout(checkPairs, 800); }, 400);
         } else {
             socket.send("DRAW:" + selectedIdx);
@@ -245,49 +242,67 @@
         const pairs = [];
         Object.values(counts).forEach(arr => { while(arr.length >= 2) pairs.push(arr.pop(), arr.pop()); });
 
+        if (isCPUMode) {
+            // CPU側のペアも内部で消しておく（演出は自分の手札のみ）
+            let cCounts = {};
+            oppHand.forEach(n => { if(n<53) { let v=(n-1)%13+1; cCounts[v]=(cCounts[v]||0)+1; } });
+            oppHand = oppHand.filter(n => {
+                if(n === 53) return true;
+                let v=(n-1)%13+1;
+                if(cCounts[v] % 2 === 0) return false;
+                cCounts[v] = 0; return true;
+            });
+        }
+
         if (pairs.length > 0) {
-            // 捨てるアニメーション
+            animating = true;
+            updateUI();
+            // 揃ったカードを浮かせる
             pairs.forEach(id => { const el = document.getElementById("card-" + id); if(el) el.classList.add('discard-target'); });
+            
             setTimeout(() => {
+                // 画面外へ飛ばす
                 pairs.forEach(id => { const el = document.getElementById("card-" + id); if(el) el.classList.add('discard-fly'); });
+                
                 setTimeout(() => {
                     myHand = myHand.filter(n => !pairs.includes(n));
                     if(isCPUMode) {
-                        isTurn = false;
+                        isTurn = true; // CPU対戦時は自分が先行
                         animating = false;
-                        if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); }
+                        if(!checkGameOver()) { updateUI(); }
                     } else {
                         socket.send("DISCARD_DONE");
                         animating = false; updateUI();
                     }
                 }, 800);
-            }, 500);
+            }, 600);
         } else {
-            if(isCPUMode) { 
-                isTurn = false; 
-                animating = false;
-                if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); } 
-            } else {
-                socket.send("DISCARD_DONE");
-                animating = false; updateUI();
-            }
+            animating = false;
+            if(isCPUMode) { isTurn = true; checkGameOver(); updateUI(); }
+            else { socket.send("DISCARD_DONE"); updateUI(); }
         }
     }
 
     function cpuTurn() {
         if (checkGameOver() || animating) return;
         animating = true;
+        updateUI();
         
         setTimeout(() => {
-            // CPUがプレイヤーからランダムに引く
             const targetIdx = Math.floor(Math.random() * myHand.length);
             const pulled = myHand.splice(targetIdx, 1)[0];
             oppHand.push(pulled);
             
-            // CPU内部のペア捨て
-            oppHand = removePairsDirectly(oppHand);
-            
-            // 手札の並びをシャッフル
+            // CPUの内部ペア消去
+            let cCounts = {};
+            oppHand.forEach(n => { if(n<53) { let v=(n-1)%13+1; cCounts[v]=(cCounts[v]||0)+1; } });
+            oppHand = oppHand.filter(n => {
+                if(n === 53) return true;
+                let v=(n-1)%13+1;
+                if(cCounts[v] % 2 === 0) return false;
+                cCounts[v] = 0; return true;
+            });
+
             myHand = myHand.sort(() => Math.random() - 0.5);
             oppHand = oppHand.sort(() => Math.random() - 0.5);
 
@@ -297,6 +312,14 @@
                 if(!checkGameOver()) { updateUI(); }
             }, 600);
         }, 1000);
+    }
+
+    // checkPairsをCPUターン後にも呼ぶように修正した統合版
+    function cpuPostDrawCheck() {
+        // CPUが引いた後の処理（今回はCPU側の演出は省略し、即座にプレイヤーのターンへ）
+        isTurn = true;
+        animating = false;
+        updateUI();
     }
 
     function checkGameOver() {
