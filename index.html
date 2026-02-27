@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Royal Old Maid - Ultimate Edition</title>
+    <title>Royal Old Maid - Grand Finale</title>
     <style>
         :root { --card-w: 100px; --card-h: 150px; --gold: #ffd700; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #071a08; color: white; margin: 0; overflow: hidden; text-align: center; }
@@ -55,12 +55,14 @@
         .draw-btn { 
             background: linear-gradient(135deg, #ffd700, #ffb300); color: #222; border: none; 
             padding: 20px 60px; border-radius: 50px; font-size: 1.6rem; cursor: pointer; font-weight: 900; 
-            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4); margin: 10px;
         }
         .draw-btn:disabled { background: #555; opacity: 0.5; }
 
         .divider { width: 85%; height: 1px; background: rgba(255,255,255,0.1); margin: 20px 0; }
-        #room-overlay { position: fixed; inset: 0; background: #071a08; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        
+        /* モード選択・入室画面共通オーバーレイ */
+        .overlay { position: fixed; inset: 0; background: #071a08; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         input { padding: 15px; font-size: 1.5rem; border-radius: 10px; border: 1px solid var(--gold); background: #111; color: white; text-align: center; margin-bottom: 20px; }
     </style>
 </head>
@@ -68,14 +70,21 @@
 
 <audio id="bgm" src="jazz.mp3" loop></audio>
 
-<div id="room-overlay">
-    <h1 style="color:var(--gold);">ROYAL OLD MAID</h1>
+<div id="mode-overlay" class="overlay">
+    <h1 style="color:var(--gold); font-size: 3.5rem; letter-spacing: 10px; margin-bottom: 50px;">ROYAL OLD MAID</h1>
+    <button class="draw-btn" onclick="initCPU()">CPUと対戦する</button>
+    <button class="draw-btn" onclick="showOnlineMenu()">オンラインで対戦する</button>
+</div>
+
+<div id="online-overlay" class="overlay" style="display: none;">
+    <h1 style="color:var(--gold);">ONLINE MATCH</h1>
     <input type="text" id="room-input" placeholder="Room ID">
-    <button class="draw-btn" onclick="join()">ENTER ROOM</button>
+    <button class="draw-btn" onclick="joinOnline()">ENTER ROOM</button>
+    <button style="background:none; border:none; color:#aaa; cursor:pointer;" onclick="location.reload()">戻る</button>
 </div>
 
 <div id="game-screen">
-    <div id="status-bar">Connecting...</div>
+    <div id="status-bar">GAME START</div>
     <div id="opp-hand-area" class="hand-area"></div>
     <div id="control-panel"></div>
     <div class="divider"></div>
@@ -83,111 +92,101 @@
 </div>
 
 <script>
-    const socket = new WebSocket('wss://old-maid-online.onrender.com');
+    let isCPUMode = false;
+    let socket = null;
     const bgm = document.getElementById('bgm');
-    let myHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
+    let myHand = [], oppHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
     let isFirstLoad = true;
 
-    socket.onmessage = (e) => {
-        const data = e.data;
-        if (data.startsWith("STATE|")) {
-            const [_, cards, count, turn] = data.split("|");
-            myHand = cards.split(",").filter(s=>s).map(Number);
-            oppCount = parseInt(count);
-            isTurn = (turn === "true");
-            document.getElementById('room-overlay').style.display = "none";
-            
-            if (isFirstLoad) {
-                isFirstLoad = false;
-                updateUI();
-                setTimeout(checkPairs, 1000);
-            } else if (!animating) {
-                updateUI();
-            }
-        } else if (data.startsWith("WINNER:")) {
-            const msg = data.split(":")[1];
-            document.getElementById('status-bar').innerText = msg;
-            setTimeout(() => { alert(msg); location.reload(); }, 1000);
-        }
-    };
-
-    function join() {
-        const rid = document.getElementById('room-input').value;
-        if(rid && socket.readyState === 1) {
-            socket.send("JOIN_ROOM:" + rid);
-            // 入室時にBGM開始
-            bgm.volume = 0.2;
-            bgm.play().catch(e => console.log("Audio play blocked until interaction"));
-        }
+    // --- モード選択ロジック ---
+    function showOnlineMenu() {
+        document.getElementById('mode-overlay').style.display = "none";
+        document.getElementById('online-overlay').style.display = "flex";
     }
 
+    function initCPU() {
+        isCPUMode = true;
+        document.getElementById('mode-overlay').style.display = "none";
+        bgm.volume = 0.2;
+        bgm.play().catch(e => {});
+
+        // デッキ作成とシャッフル
+        let deck = Array.from({length: 53}, (_, i) => i + 1);
+        deck = deck.sort(() => Math.random() - 0.5);
+
+        myHand = deck.slice(0, 27);
+        oppHand = deck.slice(27, 53);
+        isTurn = true;
+        
+        updateUI();
+        setTimeout(checkPairs, 1000);
+    }
+
+    function joinOnline() {
+        isCPUMode = false;
+        const rid = document.getElementById('room-input').value;
+        if(!rid) return;
+
+        socket = new WebSocket('wss://old-maid-online.onrender.com');
+        socket.onmessage = (e) => {
+            const data = e.data;
+            if (data.startsWith("STATE|")) {
+                const [_, cards, count, turn] = data.split("|");
+                myHand = cards.split(",").filter(s=>s).map(Number);
+                oppCount = parseInt(count);
+                isTurn = (turn === "true");
+                document.getElementById('online-overlay').style.display = "none";
+                if (isFirstLoad) { isFirstLoad = false; updateUI(); setTimeout(checkPairs, 1000); }
+                else if (!animating) { updateUI(); }
+            } else if (data.startsWith("WINNER:")) {
+                const msg = data.split(":")[1];
+                document.getElementById('status-bar').innerText = msg;
+                setTimeout(() => { alert(msg); location.reload(); }, 1000);
+            }
+        };
+
+        socket.onopen = () => {
+            socket.send("JOIN_ROOM:" + rid);
+            bgm.volume = 0.2;
+            bgm.play().catch(e => {});
+        };
+    }
+
+    // --- 共通ゲームロジック ---
     function getCardFile(n) {
         if (n === 53) return "black_joker.png";
         const suits = ['hearts', 'spades', 'diamonds', 'clubs'];
         const suit = suits[Math.floor((n-1)/13)];
         let val = (n-1) % 13 + 1;
-        if (val === 1) val = "ace";
-        else if (val === 11) val = "jack";
-        else if (val === 12) val = "queen";
-        else if (val === 13) val = "king";
-        return `${val}_of_${suit}.png`;
+        const names = {1:'ace', 11:'jack', 12:'queen', 13:'king'};
+        return `${names[val] || val}_of_${suit}.png`;
     }
 
     function updateUI() {
         if (animating) return;
         const oppArea = document.getElementById('opp-hand-area');
         const myArea = document.getElementById('my-hand');
+        const count = isCPUMode ? oppHand.length : oppCount;
         
-        renderOpponentCards(oppArea);
-        renderMyCards(myArea);
-
-        const status = document.getElementById('status-bar');
-        const panel = document.getElementById('control-panel');
-        status.innerText = isTurn ? "あなたの番です！" : "相手が引いています...";
-        status.style.color = isTurn ? "var(--gold)" : "#aaa";
-        
-        if (isTurn && oppCount > 0) {
-            panel.innerHTML = `
-                <button class="nav-btn" onclick="move(-1)">◀ 左へ</button>
-                <button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">このカードを引く</button>
-                <button class="nav-btn" onclick="move(1)">右へ ▶</button>
-            `;
-        } else {
-            panel.innerHTML = "";
-        }
-    }
-
-    function renderOpponentCards(container) {
-        while (container.children.length < oppCount) {
-            const div = document.createElement('div');
-            div.className = "card-wrapper card-back";
-            container.appendChild(div);
-        }
-        while (container.children.length > oppCount) {
-            container.removeChild(container.lastChild);
-        }
-        Array.from(container.children).forEach((el, i) => {
-            const x = (i - (oppCount-1)/2) * 35;
-            const rot = (i - (oppCount-1)/2) * 2;
+        // 相手手札描画
+        while (oppArea.children.length < count) { oppArea.appendChild(document.createElement('div')); }
+        while (oppArea.children.length > count) { oppArea.removeChild(oppArea.lastChild); }
+        Array.from(oppArea.children).forEach((el, i) => {
+            el.className = "card-wrapper card-back";
+            const x = (i - (count-1)/2) * 35;
+            const rot = (i - (count-1)/2) * 2;
             el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
             el.style.zIndex = i;
             if (isTurn && i === selectedIdx) {
                 el.classList.add('selected');
                 el.innerHTML = `<div class="cursor-arrow">▼</div>`;
-            } else {
-                el.classList.remove('selected');
-                el.innerHTML = "";
-            }
+            } else { el.classList.remove('selected'); el.innerHTML = ""; }
+            el.onclick = () => { if(isTurn && !animating) { selectedIdx = i; updateUI(); } };
         });
-    }
 
-    function renderMyCards(container) {
+        // 自分手札描画
         const existingIds = myHand.map(n => `card-${n}`);
-        Array.from(container.children).forEach(el => {
-            if (!existingIds.includes(el.id) && !el.classList.contains('discard-fly')) {
-                container.removeChild(el);
-            }
-        });
+        Array.from(myArea.children).forEach(el => { if (!existingIds.includes(el.id) && !el.classList.contains('discard-fly')) myArea.removeChild(el); });
         myHand.forEach((n, i) => {
             let el = document.getElementById(`card-${n}`);
             if (!el) {
@@ -195,25 +194,40 @@
                 el.id = `card-${n}`;
                 el.className = "card-wrapper my-card";
                 el.innerHTML = `<img src="images/png/${getCardFile(n)}" style="width:100%;height:100%;border-radius:10px;pointer-events:none;" onerror="this.src='https://via.placeholder.com/100x150?text=Card'">`;
-                container.appendChild(el);
+                myArea.appendChild(el);
             }
             const x = (i - (myHand.length-1)/2) * 45;
             const rot = (i - (myHand.length-1)/2) * 1;
             el.style.transform = `translateX(${x}px) rotate(${rot}deg)`;
             el.style.zIndex = i;
         });
+
+        const status = document.getElementById('status-bar');
+        const panel = document.getElementById('control-panel');
+        status.innerText = isTurn ? "YOUR TURN" : (isCPUMode ? "CPU'S TURN" : "OPPONENT'S TURN");
+        status.style.color = isTurn ? "var(--gold)" : "#aaa";
+        
+        if (isTurn && count > 0) {
+            panel.innerHTML = `<button class="nav-btn" onclick="move(-1)">◀ LEFT</button><button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">DRAW CARD</button><button class="nav-btn" onclick="move(1)">RIGHT ▶</button>`;
+        } else { panel.innerHTML = ""; }
     }
 
     function confirmDraw() {
-        if(!isTurn || animating || oppCount === 0) return;
+        if(!isTurn || animating) return;
+        const targetCount = isCPUMode ? oppHand.length : oppCount;
+        if(targetCount === 0) return;
+
         animating = true;
-        const btn = document.getElementById('draw-confirm');
-        if(btn) btn.disabled = true;
-        socket.send("DRAW:" + selectedIdx);
-        setTimeout(() => {
-            updateUI(); 
-            setTimeout(checkPairs, 1200); 
-        }, 500);
+        if(isCPUMode) {
+            const pulled = oppHand.splice(selectedIdx, 1)[0];
+            myHand.push(pulled);
+            myHand.sort(() => Math.random() - 0.5); // シャッフル
+            oppHand.sort(() => Math.random() - 0.5);
+            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1200); }, 500);
+        } else {
+            socket.send("DRAW:" + selectedIdx);
+            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1200); }, 500);
+        }
     }
 
     function checkPairs() {
@@ -224,31 +238,71 @@
 
         if (pairs.length > 0) {
             animating = true;
-            pairs.forEach(id => {
-                const el = document.getElementById("card-" + id);
-                if(el) el.classList.add('discard-target');
-            });
+            pairs.forEach(id => { const el = document.getElementById("card-" + id); if(el) el.classList.add('discard-target'); });
             setTimeout(() => {
-                pairs.forEach(id => {
-                    const el = document.getElementById("card-" + id);
-                    if(el) el.classList.add('discard-fly');
-                });
-                setTimeout(() => { 
-                    socket.send("DISCARD_DONE");
-                    animating = false;
-                    updateUI();
+                pairs.forEach(id => { const el = document.getElementById("card-" + id); if(el) el.classList.add('discard-fly'); });
+                setTimeout(() => {
+                    myHand = myHand.filter(n => !pairs.includes(n));
+                    if(isCPUMode) {
+                        myHand.sort(() => Math.random() - 0.5);
+                        isTurn = false;
+                        if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); }
+                    } else {
+                        socket.send("DISCARD_DONE");
+                        animating = false; updateUI();
+                    }
                 }, 900);
             }, 600);
         } else {
-            socket.send("DISCARD_DONE");
-            animating = false;
-            updateUI();
+            if(isCPUMode) { isTurn = false; if(!checkGameOver()) { animating = false; updateUI(); setTimeout(cpuTurn, 1000); } }
+            else { socket.send("DISCARD_DONE"); animating = false; updateUI(); }
         }
     }
 
+    // --- CPU専用思考ロジック ---
+    function cpuTurn() {
+        if (checkGameOver()) return;
+        
+        // CPUがあなたの手札からランダムに引く
+        const targetIdx = Math.floor(Math.random() * myHand.length);
+        const pulled = myHand.splice(targetIdx, 1)[0];
+        oppHand.push(pulled);
+        
+        // CPUのペア捨て（内部処理）
+        const counts = {};
+        oppHand.forEach(n => { if(n<53) { const v=(n-1)%13+1; (counts[v]=counts[v]||[]).push(n); } });
+        Object.values(counts).forEach(arr => {
+            while(arr.length >= 2) {
+                const a = arr.pop(), b = arr.pop();
+                oppHand = oppHand.filter(n => n !== a && n !== b);
+            }
+        });
+
+        // 整理
+        myHand.sort(() => Math.random() - 0.5);
+        oppHand.sort(() => Math.random() - 0.5);
+
+        setTimeout(() => {
+            isTurn = true;
+            if(!checkGameOver()) { updateUI(); }
+        }, 1500);
+    }
+
+    function checkGameOver() {
+        if (myHand.length === 0 || (isCPUMode && oppHand.length === 0)) {
+            let msg = (myHand.length === 0) ? "YOU WIN!" : "YOU LOSE...";
+            if (isCPUMode && myHand.length === 0 && oppHand.length === 0) msg = "DRAW";
+            document.getElementById('status-bar').innerText = msg;
+            setTimeout(() => { alert(msg); location.reload(); }, 1000);
+            return true;
+        }
+        return false;
+    }
+
     function move(dir) {
-        if(!isTurn || animating || oppCount === 0) return;
-        selectedIdx = (selectedIdx + dir + oppCount) % oppCount;
+        if(!isTurn || animating) return;
+        const count = isCPUMode ? oppHand.length : oppCount;
+        selectedIdx = (selectedIdx + dir + count) % count;
         updateUI();
     }
 
