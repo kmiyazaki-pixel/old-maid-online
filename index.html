@@ -60,8 +60,6 @@
         .draw-btn:disabled { background: #555; opacity: 0.5; }
 
         .divider { width: 85%; height: 1px; background: rgba(255,255,255,0.1); margin: 20px 0; }
-        
-        /* モード選択・入室画面共通オーバーレイ */
         .overlay { position: fixed; inset: 0; background: #071a08; z-index: 5000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         input { padding: 15px; font-size: 1.5rem; border-radius: 10px; border: 1px solid var(--gold); background: #111; color: white; text-align: center; margin-bottom: 20px; }
     </style>
@@ -98,7 +96,6 @@
     let myHand = [], oppHand = [], oppCount = 0, isTurn = false, selectedIdx = 0, animating = false;
     let isFirstLoad = true;
 
-    // --- モード選択ロジック ---
     function showOnlineMenu() {
         document.getElementById('mode-overlay').style.display = "none";
         document.getElementById('online-overlay').style.display = "flex";
@@ -110,7 +107,6 @@
         bgm.volume = 0.2;
         bgm.play().catch(e => {});
 
-        // デッキ作成とシャッフル
         let deck = Array.from({length: 53}, (_, i) => i + 1);
         deck = deck.sort(() => Math.random() - 0.5);
 
@@ -126,7 +122,6 @@
         isCPUMode = false;
         const rid = document.getElementById('room-input').value;
         if(!rid) return;
-
         socket = new WebSocket('wss://old-maid-online.onrender.com');
         socket.onmessage = (e) => {
             const data = e.data;
@@ -144,15 +139,9 @@
                 setTimeout(() => { alert(msg); location.reload(); }, 1000);
             }
         };
-
-        socket.onopen = () => {
-            socket.send("JOIN_ROOM:" + rid);
-            bgm.volume = 0.2;
-            bgm.play().catch(e => {});
-        };
+        socket.onopen = () => { socket.send("JOIN_ROOM:" + rid); bgm.volume = 0.2; bgm.play().catch(e => {}); };
     }
 
-    // --- 共通ゲームロジック ---
     function getCardFile(n) {
         if (n === 53) return "black_joker.png";
         const suits = ['hearts', 'spades', 'diamonds', 'clubs'];
@@ -168,7 +157,7 @@
         const myArea = document.getElementById('my-hand');
         const count = isCPUMode ? oppHand.length : oppCount;
         
-        // 相手手札描画
+        // 相手手札
         while (oppArea.children.length < count) { oppArea.appendChild(document.createElement('div')); }
         while (oppArea.children.length > count) { oppArea.removeChild(oppArea.lastChild); }
         Array.from(oppArea.children).forEach((el, i) => {
@@ -184,15 +173,13 @@
             el.onclick = () => { if(isTurn && !animating) { selectedIdx = i; updateUI(); } };
         });
 
-        // 自分手札描画
+        // 自分手札
         const existingIds = myHand.map(n => `card-${n}`);
         Array.from(myArea.children).forEach(el => { if (!existingIds.includes(el.id) && !el.classList.contains('discard-fly')) myArea.removeChild(el); });
         myHand.forEach((n, i) => {
             let el = document.getElementById(`card-${n}`);
             if (!el) {
-                el = document.createElement('div');
-                el.id = `card-${n}`;
-                el.className = "card-wrapper my-card";
+                el = document.createElement('div'); el.id = `card-${n}`; el.className = "card-wrapper my-card";
                 el.innerHTML = `<img src="images/png/${getCardFile(n)}" style="width:100%;height:100%;border-radius:10px;pointer-events:none;" onerror="this.src='https://via.placeholder.com/100x150?text=Card'">`;
                 myArea.appendChild(el);
             }
@@ -204,11 +191,11 @@
 
         const status = document.getElementById('status-bar');
         const panel = document.getElementById('control-panel');
-        status.innerText = isTurn ? "YOUR TURN" : (isCPUMode ? "CPU'S TURN" : "OPPONENT'S TURN");
+        status.innerText = isTurn ? "あなたの番です" : (isCPUMode ? "CPUの番です..." : "相手の番です...");
         status.style.color = isTurn ? "var(--gold)" : "#aaa";
         
         if (isTurn && count > 0) {
-            panel.innerHTML = `<button class="nav-btn" onclick="move(-1)">◀ LEFT</button><button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">DRAW CARD</button><button class="nav-btn" onclick="move(1)">RIGHT ▶</button>`;
+            panel.innerHTML = `<button class="nav-btn" onclick="move(-1)">◀ 左</button><button id="draw-confirm" class="draw-btn" onclick="confirmDraw()">引く</button><button class="nav-btn" onclick="move(1)">右 ▶</button>`;
         } else { panel.innerHTML = ""; }
     }
 
@@ -221,9 +208,10 @@
         if(isCPUMode) {
             const pulled = oppHand.splice(selectedIdx, 1)[0];
             myHand.push(pulled);
-            myHand.sort(() => Math.random() - 0.5); // シャッフル
+            selectedIdx = 0; // 選択リセット
+            myHand.sort(() => Math.random() - 0.5);
             oppHand.sort(() => Math.random() - 0.5);
-            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1200); }, 500);
+            setTimeout(() => { updateUI(); setTimeout(checkPairs, 1000); }, 500);
         } else {
             socket.send("DRAW:" + selectedIdx);
             setTimeout(() => { updateUI(); setTimeout(checkPairs, 1200); }, 500);
@@ -246,6 +234,7 @@
                     if(isCPUMode) {
                         myHand.sort(() => Math.random() - 0.5);
                         isTurn = false;
+                        animating = false; // ★ここでロック解除
                         if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); }
                     } else {
                         socket.send("DISCARD_DONE");
@@ -254,44 +243,50 @@
                 }, 900);
             }, 600);
         } else {
-            if(isCPUMode) { isTurn = false; if(!checkGameOver()) { animating = false; updateUI(); setTimeout(cpuTurn, 1000); } }
+            if(isCPUMode) { 
+                isTurn = false; 
+                animating = false; // ★ここでロック解除
+                if(!checkGameOver()) { updateUI(); setTimeout(cpuTurn, 1000); } 
+            }
             else { socket.send("DISCARD_DONE"); animating = false; updateUI(); }
         }
     }
 
-    // --- CPU専用思考ロジック ---
     function cpuTurn() {
-        if (checkGameOver()) return;
+        if (checkGameOver() || animating) return;
+        animating = true; // CPU動作中もロック
         
-        // CPUがあなたの手札からランダムに引く
-        const targetIdx = Math.floor(Math.random() * myHand.length);
-        const pulled = myHand.splice(targetIdx, 1)[0];
-        oppHand.push(pulled);
-        
-        // CPUのペア捨て（内部処理）
-        const counts = {};
-        oppHand.forEach(n => { if(n<53) { const v=(n-1)%13+1; (counts[v]=counts[v]||[]).push(n); } });
-        Object.values(counts).forEach(arr => {
-            while(arr.length >= 2) {
-                const a = arr.pop(), b = arr.pop();
-                oppHand = oppHand.filter(n => n !== a && n !== b);
-            }
-        });
-
-        // 整理
-        myHand.sort(() => Math.random() - 0.5);
-        oppHand.sort(() => Math.random() - 0.5);
-
         setTimeout(() => {
-            isTurn = true;
-            if(!checkGameOver()) { updateUI(); }
-        }, 1500);
+            const targetIdx = Math.floor(Math.random() * myHand.length);
+            const pulled = myHand.splice(targetIdx, 1)[0];
+            oppHand.push(pulled);
+            
+            // CPUのペア捨て
+            const counts = {};
+            oppHand.forEach(n => { if(n<53) { const v=(n-1)%13+1; (counts[v]=counts[v]||[]).push(n); } });
+            Object.values(counts).forEach(arr => {
+                while(arr.length >= 2) {
+                    const a = arr.pop(), b = arr.pop();
+                    oppHand = oppHand.filter(n => n !== a && n !== b);
+                }
+            });
+
+            myHand.sort(() => Math.random() - 0.5);
+            oppHand.sort(() => Math.random() - 0.5);
+
+            setTimeout(() => {
+                isTurn = true;
+                animating = false; // ★CPU終了時にロック解除
+                if(!checkGameOver()) { updateUI(); }
+            }, 800);
+        }, 1000);
     }
 
     function checkGameOver() {
+        const count = isCPUMode ? oppHand.length : oppCount;
         if (myHand.length === 0 || (isCPUMode && oppHand.length === 0)) {
-            let msg = (myHand.length === 0) ? "YOU WIN!" : "YOU LOSE...";
-            if (isCPUMode && myHand.length === 0 && oppHand.length === 0) msg = "DRAW";
+            let msg = (myHand.length === 0) ? "あなたの勝ち！" : "あなたの負け...";
+            if (isCPUMode && myHand.length === 0 && oppHand.length === 0) msg = "引き分け！";
             document.getElementById('status-bar').innerText = msg;
             setTimeout(() => { alert(msg); location.reload(); }, 1000);
             return true;
@@ -302,6 +297,7 @@
     function move(dir) {
         if(!isTurn || animating) return;
         const count = isCPUMode ? oppHand.length : oppCount;
+        if(count === 0) return;
         selectedIdx = (selectedIdx + dir + count) % count;
         updateUI();
     }
